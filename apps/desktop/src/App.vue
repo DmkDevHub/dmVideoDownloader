@@ -48,6 +48,6 @@ onMounted(async () => {
     </section>
     <footer class="status-row"><button disabled>다운로드 폴더 열기</button><p class="hint" role="status">브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.</p></footer>
     <p v-if="startupError" class="error" role="alert">{{ startupError }}</p>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" @cancel="editor.cancel()" @reset="editor.reset()" />
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" @cancel="editor.cancel()" @reset="editor.reset()" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" />
   </main>
 </template>

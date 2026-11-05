@@ -26,5 +26,13 @@ export function createSettingsEditor(initial: Settings, defaults: Settings) {
     open() { if (!state.open) { state.draft = { ...state.current }; state.error = ''; state.open = true; } },
     cancel() { if (!state.busy) { state.draft = { ...state.current }; state.error = ''; state.open = false; } },
     reset() { if (!state.busy) state.draft = { ...defaults }; },
+    async browse(pick: () => Promise<string | null>) {
+      if (state.busy) return;
+      state.busy = true;
+      state.error = '';
+      try { const directory = await pick(); if (directory !== null) state.draft.downloadDirectory = directory; }
+      catch { state.error = '폴더를 선택하거나 쓸 수 없습니다. 다른 저장 위치를 선택하세요.'; }
+      finally { state.busy = false; }
+    },
   };
 }

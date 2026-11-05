@@ -38,3 +38,17 @@ test('reset is a draft operation and cancel keeps the saved settings', () => {
   editor.cancel();
   expect(editor.state.current).toEqual(saved);
 });
+
+test('picker cancellation and failure preserve the draft and release busy state', async () => {
+  const editor = createSettingsEditor(defaultSettings('D:\\Videos'), defaultSettings('D:\\Videos'));
+  editor.open();
+  await editor.browse(async () => null);
+  expect(editor.state.draft.downloadDirectory).toBe('D:\\Videos');
+  await editor.browse(async () => { throw new Error('denied'); });
+  expect(editor.state.draft.downloadDirectory).toBe('D:\\Videos');
+  expect(editor.state.error).not.toBe('');
+  expect(editor.state.busy).toBe(false);
+  await editor.browse(async () => 'E:\\Videos');
+  expect(editor.state.draft.downloadDirectory).toBe('E:\\Videos');
+  expect(editor.state.current.downloadDirectory).toBe('D:\\Videos');
+});

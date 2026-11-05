@@ -15,7 +15,7 @@ onMounted(() => dialog.value?.showModal());
       <fieldset :disabled="busy">
         <legend>일반</legend>
         <label for="download-directory">다운로드 저장 위치</label>
-        <div class="input-row"><input id="download-directory" v-model="draft.downloadDirectory" :title="draft.downloadDirectory" autocomplete="off" /><button type="button" disabled @click="$emit('browse')">찾아보기</button></div>
+        <div class="input-row"><input id="download-directory" v-model="draft.downloadDirectory" :title="draft.downloadDirectory" autocomplete="off" /><button type="button" @click="$emit('browse')">찾아보기</button></div>
       </fieldset>
       <fieldset :disabled="busy" class="options-grid">
         <legend>다운로드</legend>

@@ -13,6 +13,7 @@
     "check": "npm run check --workspace @dm-video/desktop",
     "smoke": "node scripts/smoke.mjs",
     "test": "npm run test --workspace @dm-video/desktop",
-    "verify": "npm run check && npm test && npm run smoke && npm run build:debug"
+    "test:rust": "cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib",
+    "verify": "npm run check && npm test && npm run smoke && npm run test:rust && npm run build:debug"
   }
 }
