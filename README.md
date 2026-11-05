@@ -1,9 +1,9 @@
-# Browser Video Downloader — Codex 개발 설계 패키지
+# Browser Video Downloader
 
 - 설계 버전: **v1.2** (2026-11-05)
 - 대상: Windows 11 개인용 브라우저 감지 기반 영상 다운로더
 - 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
-- 상태: **R0-01~03 완료: 최소 앱 골격과 소스/빌드 경계 구성**. 영상 감지·다운로드 기능은 아직 구현되지 않았다.
+- 상태: **R0 전체 완료: 최소 Windows 앱 골격·폴더/빌드 경계·내부 자동화 테스트 구성**. 영상 감지·다운로드 기능은 아직 구현되지 않았다.
 
 ## 한눈에 보는 요구사항
 
@@ -71,6 +71,8 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 | 명령 (프로젝트 루트) | 동작 |
 |---|---|
 | `npm run check` | Vue/TypeScript 타입 검사 |
+| `npm test` | 화면 조작 없는 Vitest 단위 테스트 (컴포넌트 내부 렌더링·최소 권한/CSP) |
+| `npm run verify` | 타입 검사→단위 테스트→숨김 네이티브 smoke→일반 디버그 빌드. 실패 시 중단 |
 | `npm run build:frontend` | 타입 검사 및 Vue 번들 생성 |
 | `npm run build:debug` | 프런트엔드 및 Windows 디버그 EXE 빌드, 설치 패키지 없음 |
 | `npm run build` | 릴리스 EXE 빌드, 설치 패키지 없음 (배포 검증은 R7) |
@@ -80,3 +82,5 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 일반 실행 파일은 `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe`이며 프런트엔드 산출물은 `apps/desktop/dist/`이다. smoke 명령은 같은 디버그 경로에 테스트 전용 실행 파일을 생성하므로 일반 실행 전 `npm run build:debug`로 다시 빌드한다. 테스트 IPC는 `smoke-test` Cargo feature와 smoke 프런트엔드 모드에만 포함된다. 숨겨진 창 검증은 시각적 레이아웃 확인을 대신하지 않는다.
 
 구현 시 참고한 공식 문서: [Tauri Windows 선행 조건](https://v2.tauri.app/start/prerequisites/), [Vite 프런트엔드 연결](https://v2.tauri.app/start/frontend/), [설정](https://v2.tauri.app/reference/config/), [테스트](https://v2.tauri.app/develop/tests/).
+
+단위 테스트는 [Vitest](https://vitest.dev/config/)와 [Vue 내부 문자열 렌더러](https://vuejs.org/api/ssr)를 사용한다. 렌더러는 테스트 프로세스 안에서만 사용하며 서버를 실행하지 않는다.

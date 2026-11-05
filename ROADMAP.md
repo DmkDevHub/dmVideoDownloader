@@ -8,12 +8,13 @@
 ## R0 — 프로젝트 기반
 
 - [x] **R0-01** 기존 프로젝트·환경·파일 조사: Windows, Node, Rust, Tauri, Chrome 및 기존 소스 상태를 확인하고 보존할 파일 목록 기록. (완료: 조사 결과 문서화)
-  > 검증: 2026-11-05 / [환경 조사 결과](docs/ENVIRONMENT.md). 기존 설계 문서 15개와 소스 부재 자동 검사 PASS, 도구 버전 실행 확인. 직접 대응 TC 없음; TC-01~20 NOT RUN(앱 미구현). 제한: Windows 제품명 확정 보류(CIM 접근 불가), Tauri CLI 없음, 실제 빌드·앱 실행 미검증. R0 전체 완료 아님.
+  > 검증: 2026-11-05 / [환경 조사 결과](docs/ENVIRONMENT.md). 기존 설계 문서 15개와 소스 부재 자동 검사 PASS, 도구 버전 실행 확인. 직접 대응 TC 없음; TC-01~20 NOT RUN(기능 미구현). 초기 조사 당시 제한: Windows 제품명 확정 보류(CIM 접근 불가), Tauri CLI 없음, 실제 빌드·앱 실행 미검증. 이후 R0-02에서 Windows 제품명·로컬 CLI·앱 빌드/실행 확인.
 - [x] **R0-02** 최소 Tauri 2 + Vue 3 + TypeScript + Rust 실행 골격 구성. (완료: Windows 창 실행)
   > 검증: 2026-11-05 / Windows 11 Pro x64 / `npm run check`, `npm run build:debug`, `npm run smoke`, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` PASS. 숨겨진 실제 Windows WebView 창 생성·Vue 마운트·Rust IPC·정상 종료 확인. 직접 대응 TC 없음; TC-01~20 NOT RUN(기능 미구현). 시각적 배치·화면 조작은 미검증. [환경 기록](docs/ENVIRONMENT.md).
 - [x] **R0-03** 앱·확장·Native Host·공통 타입 폴더 구성 및 빌드 규칙 정리. (완료: 구조/빌드 확인)
   > 검증: 2026-11-05 / 폴더 경계 및 공유 TS 설정 연결 PowerShell 검사 PASS, `npm run build:debug` PASS, 잠금 파일 변경 없음. [빌드 규칙](docs/BUILD.md). 확장·Native Host·공통 메시지 타입은 후속 단계용 경계만 확보(기능 구현 없음). 직접 대응 TC 없음; TC-01~20 NOT RUN.
-- [ ] **R0-04** 기본 테스트 실행 체계 설정. (완료: 최소 1개 단위 테스트 통과)
+- [x] **R0-04** 기본 테스트 실행 체계 설정. (완료: 최소 1개 단위 테스트 통과)
+  > 검증: 2026-11-05 / `npm run verify` PASS: Vue/TypeScript 검사, Vitest 2개 파일·3개 단위 테스트, 실제 숨김 WebView smoke, 일반 디버그 EXE 빌드. `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, `git diff --check` PASS. 화면 조작 없음. 직접 대응 TC 없음; TC-01~20 NOT RUN(기능 미구현). [상세 결과](docs/TEST_PLAN.md#7-r0-기반-검증-실행-결과).
 
 ## R1 — Windows 메인 화면과 설정 창
 
@@ -94,6 +95,6 @@
 
 > 검증: TC-xx / 날짜 / 실제 결과 / 환경. 제한: ...
 
-**현재 완료된 작업: R0-01~03.** 최소 앱 골격·숨김 WebView 실행 및 폴더/빌드 경계를 검증했으며 제품 기능은 아직 구현되지 않았다.
+**현재 완료된 작업: R0-01~04 (R0 전체).** 최소 앱 골격·숨김 WebView 실행·폴더/빌드 경계·내부 자동화 테스트를 검증했다. 영상 감지·다운로드 등 제품 기능과 시각적 레이아웃은 아직 미검증이며 R1 이후는 미착수이다.
 
 v1.2 문서 개정: 설치 방식과 관련 세부 작업을 추가했다. 문서 개정으로 구현 체크박스를 완료 처리하지 않는다.

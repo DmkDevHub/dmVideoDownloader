@@ -87,3 +87,24 @@
 - 자동화 대상 추가: ID 정규식/origin 생성, 현재 경로 매니페스트, HKCU 등록 어댑터의 반복 호출/소유권·실패 처리, 테스트 핸드셰이크/시간 초과. 실제 Chrome 설치·레지스트리 동작은 Windows 실기 검증으로 보완한다.
 
 설계 문서 v1.2 작성 시 앱 소스가 없으므로 위 앱 기능 테스트는 모두 **NOT RUN**이다. 문서/ZIP 무결성 검사는 실행 검증을 대신하지 않는다.
+
+## 7. R0 기반 검증 실행 결과
+
+- 날짜/환경: 2026-11-05 / Windows 11 Pro x64 `10.0.26300` / Node `24.12.0`, Rust `1.99.1`. 상세 환경은 `ENVIRONMENT.md` 참조.
+- 작업: R0-02~04. 기존 TC-01~20에 직접 대응하는 기반 테스트 ID가 없으므로 아래 자동 테스트명으로 기록한다.
+
+| 실행 명령/자동 테스트명 | 실제 결과 | 확인 범위 |
+|---|---|---|
+| `npm run check` | PASS | Vue/TypeScript 및 테스트 설정 타입 검사 |
+| PowerShell 폴더/공유 설정 검사 | PASS | 앱·확장·Native Host·shared·scripts·tests 경계와 공유 TS 설정 연결 |
+| `npm test` / App startup render | PASS | 실제 Vue SFC를 내부 렌더러로 처리, 루트/제목 렌더링 및 해당 렌더링 중 fetch 호출 없음 |
+| `npm test` / scaffold capabilities | PASS | 기본 창 1개, 외부 URL 없음, 명시적 네이티브 권한 없음 |
+| `npm test` / production CSP | PASS | 기본 리소스/스크립트 self 제한 및 연결 대상이 로컬 Tauri IPC로 제한됨 |
+| `npm run smoke` | PASS | 실제 숨김 네이티브 WebView 창 핸들, Vue 마운트, 프런트엔드→Rust 호출, 정상 종료. 30초 앱 대기/45초 프로세스 제한 |
+| `npm run build:debug` | PASS | 일반 프런트엔드 및 MSVC Windows EXE 빌드, 테스트 feature 미포함 |
+| `npm run verify` | PASS | 타입 검사→3개 단위 테스트→네이티브 smoke→일반 디버그 빌드 전체 순차 통과 |
+| Rust fmt 및 `git diff --check` | PASS | Rust 포맷 및 변경 공백 검사 |
+
+앱 EXE 증거 경로: `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe` (생성 산출물, 커밋 제외). smoke 성공 출력: `SMOKE_PASS: native window, Vue mount, frontend-to-Rust IPC`.
+
+화면 클릭·입력 자동화는 실행하지 않았다. Vue 내부 렌더링은 브라우저 마운트를 대신하지 않으며 실제 마운트는 별도 네이티브 smoke에서 검증했다. 화면 배치·사용자 조작·릴리스 배포 및 TC-01~20 제품 기능 검증은 NOT RUN이다. R1 이후 작업은 착수하지 않았다.

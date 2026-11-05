@@ -55,3 +55,11 @@
 - `npm run check`, `npm run build:debug`: PASS. 실제 Windows MSVC 링크 및 WebView2 사용 앱 빌드 확인. Rust 라이브러리 이름에 `_lib`를 붙여 최초 빌드의 PDB 파일 이름 충돌 경고 해소.
 - `npm run smoke`: 숨김 네이티브 WebView에서 Vue 마운트, 프런트엔드→Rust 호출, 프로세스 종료 코드 0을 검사. 화면 클릭·입력 없음. 시각적 배치·사용자 조작 시나리오는 미검증.
 - TC-01~20은 기능 미구현으로 NOT RUN. R0 골격 검증에 직접 대응하는 기존 TC ID는 없음. 릴리스 패키징·영상 다운로드·Chrome 연결 검증은 이번 범위가 아님.
+
+### R0-03~04 후속 검증
+
+- 폴더/필수 파일 및 공통 TypeScript 설정 연결 PowerShell 검사 PASS. R0-03에서 npm/Cargo 잠금 파일 변경 없음.
+- R0-04에서 Vitest `5.1.0`과 Node 타입 개발 의존성을 추가하고 npm 잠금 파일 갱신.
+- `npm run verify`: PASS. Vue/TypeScript 검사→Vitest 2개 파일·3개 단위 테스트→숨겨진 실제 Windows WebView/Vue 마운트/Rust IPC/종료 코드 0→일반 디버그 빌드 순서로 모두 통과. 테스트 전용 EXE 대신 정상 디버그 EXE로 검증 산출물을 마무리했다.
+- `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, `git diff --check`: PASS. 화면 직접 조작·클릭/입력 자동화 없음.
+- R0-01~04 완료. 이 환경의 기반 검증 기록이며 새 컴퓨터는 재확인이 필요하다. 릴리스 빌드·배포·시각적 배치·TC-01~20은 미검증 상태를 유지한다.

@@ -2,6 +2,14 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-05 — [R0-04] 기본 내부 자동화 테스트 체계
+
+- 변경: Vitest 실행 설정, Vue SFC 내부 렌더링 및 기본 네이티브 권한/CSP 단위 테스트 3개 추가. 루트 `npm test`, `npm run verify` 진입점과 개발 의존성 잠금 파일 갱신.
+- 자동 테스트: `npm run verify` 전체 PASS (타입 검사, 2개 파일·3개 단위 테스트, 숨겨진 실제 Windows WebView/Vue/Rust 호출 및 정상 종료, 일반 디버그 빌드). Rust fmt 및 `git diff --check` PASS.
+- 요구사항 검증: 화면 조작 없이 테스트 실행·실제 Windows 앱 구동을 확인하고 마지막 산출물을 일반 디버그 EXE로 복원. 직접 대응 TC 없음; TC-01~20 기능 테스트는 NOT RUN.
+- 문서: README/BUILD/tests 안내, TEST_PLAN 상세 결과, ENVIRONMENT 후속 검증 및 ROADMAP R0-04/R0 전체 완료 반영.
+- 남은 제한: 시각적 레이아웃·릴리스 배포·제품 기능 미검증. 다음 후보는 R1-01 하나이며 추가 사용자 지시 전 착수하지 않음. 푸시 없음.
+
 ## 2026-11-05 — [R0-03] 소스 폴더 경계 및 빌드 규칙
 
 - 변경: `extension`, `native-host`, `shared`, `tests` 폴더의 책임/후속 구현 경계를 기록. 공통 TypeScript 설정을 `shared/tsconfig.base.json`으로 분리해 데스크톱에서 사용. `docs/BUILD.md`에 실제 빌드 명령·잠금 파일·산출물/제외 규칙 정리.

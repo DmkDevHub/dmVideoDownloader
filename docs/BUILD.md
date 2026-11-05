@@ -10,7 +10,7 @@
 | `native-host` | 별도 Windows Native Messaging EXE | 경계 안내만 존재, 프로토콜/빌드는 R3 |
 | `shared` | 런타임에 의존하지 않는 공통 타입·검사 설정 | 공통 TS 설정을 데스크톱이 사용, 메시지 타입/스키마는 R3-01 |
 | `scripts` | 빌드·내부 검증 진입점 | 숨김 WebView 실행 검증 제공 |
-| `tests` | 공통 자동화 검증·자산 | 단위 테스트 실행 체계는 R0-04 |
+| `tests` | 공통 자동화 검증·자산 안내 | 단위 테스트는 앱의 `src/**/*.test.ts`, `npm test`로 실행 |
 
 확장·호스트 경계 폴더가 존재하는 것은 기능 실행 가능을 뜻하지 않는다. 다운로드는 앱이 맡고 Chrome은 감지와 명시적 선택 전달만 맡는다. 설치·연결 관련 구현 전에 해당 설계 문서를 읽는다.
 
@@ -21,6 +21,8 @@
 3. `npm run check` 및 `npm run build:frontend`로 Vue/TypeScript를 확인한다.
 4. `npm run build:debug`로 앱 EXE를 만든다. 릴리스 컴파일은 `npm run build`이며 R7 배포 인수 검증을 대신하지 않는다.
 5. `npm run smoke`로 화면 조작 없이 숨겨진 실제 WebView·Vue·Rust 호출을 검증한다. 정상 실행용 EXE가 필요하면 이후 `npm run build:debug`를 실행한다.
+
+일괄 검증은 `npm run verify`로 타입 검사→Vitest 단위 테스트→네이티브 smoke→일반 디버그 빌드 순서로 실행한다. 단계가 실패하면 후속 단계를 실행하지 않고 0이 아닌 종료 코드로 실패를 전파한다. 단위 테스트만 실행할 때는 `npm test`를 사용한다. 테스트 파일이 없을 때 성공 처리하지 않는다. Rust 기능 로직이 추가되면 해당 단위 테스트와 실행 명령을 추가한다.
 
 Rust 잠금 파일은 `apps/desktop/src-tauri/Cargo.lock` 하나이며 해당 Cargo manifest가 앱의 빌드 경계이다. 직접 확인할 때는 루트에서 `cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml`을 사용한다. 프런트엔드가 먼저 빌드되어 있어야 한다. 소스 변경이 없을 때 잠금 파일 변경은 의도하지 않는다. Native Host 구현 전에는 빈 Cargo 워크스페이스나 호스트 EXE를 만들지 않는다.
 
