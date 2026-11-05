@@ -63,3 +63,11 @@
 - `npm run verify`: PASS. Vue/TypeScript 검사→Vitest 2개 파일·3개 단위 테스트→숨겨진 실제 Windows WebView/Vue 마운트/Rust IPC/종료 코드 0→일반 디버그 빌드 순서로 모두 통과. 테스트 전용 EXE 대신 정상 디버그 EXE로 검증 산출물을 마무리했다.
 - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, `git diff --check`: PASS. 화면 직접 조작·클릭/입력 자동화 없음.
 - R0-01~04 완료. 이 환경의 기반 검증 기록이며 새 컴퓨터는 재확인이 필요하다. 릴리스 빌드·배포·시각적 배치·TC-01~20은 미검증 상태를 유지한다.
+
+## 2026-11-05 — 같은 개발 컴퓨터 / R1 후속 검증
+
+- 작업 경로와 Node/Rust/MSVC/WebView 환경은 위 R0 기록과 동일하다. 기존 소스를 보존하고 승인된 R1-01~06만 순차 진행했다.
+- 프로젝트 의존성: Rust dialog `2.8.4`, tempfile `3.27.0`, serde/serde_json 추가 및 Cargo 잠금 파일 갱신. 전역 도구·기업 정책·레지스트리·Chrome 프로필 변경 없음.
+- 최종 `npm run verify` PASS: Vitest 13개, Rust 8개, 실제 숨김 앱 프로세스 4회 및 일반 디버그 빌드. `cargo fmt -- --check`, Clippy `--all-targets -- -D warnings`, `git diff --check` PASS.
+- 격리된 테스트 폴더에서 한글 저장 경로/화질/자동 감지 옵션 저장과 실제 프로세스 재시작 복원, 손상 백업·복구·미래 스키마 보존, 단일 설정창 모델/실제 마운트/취소, 리소스 진단을 확인했다. 자세한 TC별 범위는 TEST_PLAN 8절 참조.
+- 실제 화면 조작·OS picker·Chrome/탐색기 실행은 하지 않았다. 사용자 설정·다운로드 폴더와 호스트 등록도 변경하지 않았다. 실제 Native Messaging과 다운로드는 후속 단계이며 현재 검증 성공으로 대체하지 않는다.

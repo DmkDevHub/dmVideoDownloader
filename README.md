@@ -3,7 +3,7 @@
 - 설계 버전: **v1.2** (2026-11-05)
 - 대상: Windows 11 개인용 브라우저 감지 기반 영상 다운로더
 - 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
-- 상태: **R0 전체 완료: 최소 Windows 앱 골격·폴더/빌드 경계·내부 자동화 테스트 구성**. 영상 감지·다운로드 기능은 아직 구현되지 않았다.
+- 상태: **R0 완료 / R1 메인 화면·설정 저장·Chrome 설치 안내 구현**. 영상 감지·다운로드·Native Messaging 연결 기능은 아직 구현되지 않았다.
 
 ## 한눈에 보는 요구사항
 
@@ -71,12 +71,13 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 | 명령 (프로젝트 루트) | 동작 |
 |---|---|
 | `npm run check` | Vue/TypeScript 타입 검사 |
-| `npm test` | 화면 조작 없는 Vitest 단위 테스트 (컴포넌트 내부 렌더링·최소 권한/CSP) |
-| `npm run verify` | 타입 검사→단위 테스트→숨김 네이티브 smoke→일반 디버그 빌드. 실패 시 중단 |
+| `npm test` | 화면 조작 없는 Vitest 단위 테스트 (렌더링·설정 초안/취소·ID·연결 상태·권한/CSP) |
+| `npm run test:rust` | 폴더·설정 파일·원자 교체·복구·경합·리소스 진단 테스트. 처음에는 프런트엔드 빌드 필요 |
+| `npm run verify` | 타입 검사→Vitest→숨김 네이티브 smoke→Rust 테스트→일반 디버그 빌드. 실패 시 중단 |
 | `npm run build:frontend` | 타입 검사 및 Vue 번들 생성 |
 | `npm run build:debug` | 프런트엔드 및 Windows 디버그 EXE 빌드, 설치 패키지 없음 |
 | `npm run build` | 릴리스 EXE 빌드, 설치 패키지 없음 (배포 검증은 R7) |
-| `npm run smoke` | 테스트 전용 설정으로 디버그 빌드 후 숨겨진 WebView에서 Vue 마운트→Rust IPC→프로세스 정상 종료 확인. 화면 클릭·입력 없음 |
+| `npm run smoke` | 격리 폴더에서 숨김 앱 4회 실행: 설정 저장/재시작/손상 복구/미래 버전 보존, 단일 설정창 모델 검증. 화면 클릭·입력 없음 |
 | `npm run dev` | 사용자가 앱을 개발 모드로 실행할 때 사용 |
 
 일반 실행 파일은 `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe`이며 프런트엔드 산출물은 `apps/desktop/dist/`이다. smoke 명령은 같은 디버그 경로에 테스트 전용 실행 파일을 생성하므로 일반 실행 전 `npm run build:debug`로 다시 빌드한다. 테스트 IPC는 `smoke-test` Cargo feature와 smoke 프런트엔드 모드에만 포함된다. 숨겨진 창 검증은 시각적 레이아웃 확인을 대신하지 않는다.
@@ -84,3 +85,15 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 구현 시 참고한 공식 문서: [Tauri Windows 선행 조건](https://v2.tauri.app/start/prerequisites/), [Vite 프런트엔드 연결](https://v2.tauri.app/start/frontend/), [설정](https://v2.tauri.app/reference/config/), [테스트](https://v2.tauri.app/develop/tests/).
 
 단위 테스트는 [Vitest](https://vitest.dev/config/)와 [Vue 내부 문자열 렌더러](https://vuejs.org/api/ssr)를 사용한다. 렌더러는 테스트 프로세스 안에서만 사용하며 서버를 실행하지 않는다.
+
+## 현재 설정 기능과 제한
+
+메인 화면의 [설정]은 하나의 모달 대화상자를 연다. 설정은 실행 파일 옆 `data/settings.json`에 보관하며 기본 저장 위치는 Windows 다운로드 Known Folder 아래 `Videos`이다. [기본값 복원]은 편집값만 바꾸고 [저장] 전에는 적용하지 않는다. 저장 실패 시 창을 유지하고 이유를 안내한다.
+
+저장 위치는 로컬 드라이브의 안전한 절대경로만 허용한다. 상대·UNC·장치·경로 순회·예약 이름·리파스 지점·보호 시스템 폴더는 거부한다. 존재하지 않는 저장 폴더는 선택/저장 과정에서 생성할 수 있으며 임시 파일로 쓰기를 검사한다. 설정 변경은 새 작업부터 적용하는 구조이며 실제 다운로드 작업은 아직 없다.
+
+손상 설정은 자동으로 덮어쓰지 않는다. 같은 설정창의 [손상 파일 백업 후 기본값 저장]을 선택하면 `data/settings.backup-*.json`에 원본을 보관한 뒤 복구한다. 미래 스키마는 저장·복구를 거부하며 호환 앱이 필요하다. 다른 앱이 설정을 변경했다면 덮어쓰지 않고 재시작을 안내한다. 앱 폴더에 쓸 수 없으면 쓰기 가능한 위치로 포터블 폴더 전체를 옮겨 실행한다.
+
+Chrome 영역은 수동 unpacked 설치 안내, 관리 주소 복사, 실제 확장 ID 입력/설정 저장 및 로컬 배포 리소스 진단을 제공한다. 경로는 실행 파일 기준이다. **호스트 등록·연결 테스트·복구·해제 버튼은 R3 구현 전까지 비활성화**되어 있다. 파일 존재나 ID 형식만으로 설치됨/연결됨을 표시하지 않는다. 현재 저장소의 extension 폴더는 아직 Chrome에 로드 가능한 빌드 결과가 아니다.
+
+자동 검증은 `.test-output/smoke-*`의 격리 데이터만 사용한다. 사용자 설정·다운로드 폴더와 레지스트리를 변경하지 않고 Chrome/탐색기/폴더 선택창을 실행하지 않는다. 시각적 배치와 실제 OS 선택창 조작은 미검증이며 상세 범위는 [테스트 기록](docs/TEST_PLAN.md)을 따른다.

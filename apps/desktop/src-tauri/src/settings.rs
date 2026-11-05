@@ -122,6 +122,13 @@ impl Store {
     pub fn path(&self) -> PathBuf {
         self.root.join("data").join("settings.json")
     }
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+    pub fn saved_directory(&self) -> Result<PathBuf, &'static str> {
+        let _guard = self.lock()?;
+        Ok(PathBuf::from(parse(&self.read()?)?.download_directory))
+    }
     fn lock(&self) -> Result<File, &'static str> {
         let data = self.root.join("data");
         folders::check_path(&data)?;

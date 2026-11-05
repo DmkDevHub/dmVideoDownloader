@@ -4,8 +4,8 @@
 
 | 경로 | 책임 | 현재 빌드 여부 |
 |---|---|---|
-| `apps/desktop/src` | Vue 3 화면 | Vite로 빌드 가능, 실행 골격만 구현 |
-| `apps/desktop/src-tauri` | Tauri 2/Rust 앱 코어 | Windows EXE 빌드 가능, 다운로드·설정·IPC 기능 미구현 |
+| `apps/desktop/src` | Vue 3 화면 | 메인 화면·단일 설정 대화상자·Chrome 안내/상태 UI |
+| `apps/desktop/src-tauri` | Tauri 2/Rust 앱 코어 | Windows EXE, 폴더 검증·JSON 설정/복구·리소스 진단. 다운로드·Native Messaging은 미구현 |
 | `extension` | Chrome MV3 감지·팝업 | 경계 안내만 존재, manifest 및 빌드는 R2-01 |
 | `native-host` | 별도 Windows Native Messaging EXE | 경계 안내만 존재, 프로토콜/빌드는 R3 |
 | `shared` | 런타임에 의존하지 않는 공통 타입·검사 설정 | 공통 TS 설정을 데스크톱이 사용, 메시지 타입/스키마는 R3-01 |
@@ -22,7 +22,9 @@
 4. `npm run build:debug`로 앱 EXE를 만든다. 릴리스 컴파일은 `npm run build`이며 R7 배포 인수 검증을 대신하지 않는다.
 5. `npm run smoke`로 화면 조작 없이 숨겨진 실제 WebView·Vue·Rust 호출을 검증한다. 정상 실행용 EXE가 필요하면 이후 `npm run build:debug`를 실행한다.
 
-일괄 검증은 `npm run verify`로 타입 검사→Vitest 단위 테스트→네이티브 smoke→일반 디버그 빌드 순서로 실행한다. 단계가 실패하면 후속 단계를 실행하지 않고 0이 아닌 종료 코드로 실패를 전파한다. 단위 테스트만 실행할 때는 `npm test`를 사용한다. 테스트 파일이 없을 때 성공 처리하지 않는다. Rust 기능 로직이 추가되면 해당 단위 테스트와 실행 명령을 추가한다.
+일괄 검증은 `npm run verify`로 타입 검사→Vitest 단위 테스트→네이티브 smoke→Rust 단위 테스트→일반 디버그 빌드 순서로 실행한다. 단계가 실패하면 후속 단계를 실행하지 않고 0이 아닌 종료 코드로 실패를 전파한다. JS 단위 테스트는 `npm test`, Rust 단위 테스트는 `npm run test:rust`이다. Rust 테스트의 Tauri 컨텍스트 생성에는 프런트엔드 산출물이 필요하므로 처음에는 `npm run build:frontend`를 먼저 실행한다. 테스트 파일이 없을 때 성공 처리하지 않는다.
+
+smoke 테스트 전용 feature에서만 `DM_SMOKE_ROOT`/`DM_SMOKE_PHASE`를 사용한다. 테스트는 별도 `.test-output/smoke-*`에서 네이티브 프로세스를 순차 실행하고 설정 파일과 백업을 검사한다. 일반 앱은 환경 변수로 설정 경로를 변경하지 않으며 EXE 폴더 기준으로만 `data/settings.json`을 사용한다. 테스트 산출물은 커밋하지 않는다.
 
 Rust 잠금 파일은 `apps/desktop/src-tauri/Cargo.lock` 하나이며 해당 Cargo manifest가 앱의 빌드 경계이다. 직접 확인할 때는 루트에서 `cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml`을 사용한다. 프런트엔드가 먼저 빌드되어 있어야 한다. 소스 변경이 없을 때 잠금 파일 변경은 의도하지 않는다. Native Host 구현 전에는 빈 Cargo 워크스페이스나 호스트 EXE를 만들지 않는다.
 

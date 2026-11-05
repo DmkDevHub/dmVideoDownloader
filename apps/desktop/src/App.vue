@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, nextTick } from 'vue';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
+import type { BrowserRuntime } from './browserConnection';
 
 const address = ref('');
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
 const startupError = ref('');
 const snapshotState = ref<SettingsSnapshot>();
+const runtime = ref<BrowserRuntime>();
+const actionMessage = ref('');
+
+async function openDownloadFolder() {
+  try { await invoke('open_download_folder'); actionMessage.value = '다운로드 폴더 열기를 요청했습니다.'; }
+  catch { actionMessage.value = '다운로드 폴더를 열 수 없습니다. 저장 위치·설정 파일·권한을 확인하세요.'; }
+}
 
 function applySnapshot(snapshot: SettingsSnapshot) {
   snapshotState.value = snapshot;
@@ -35,22 +43,39 @@ onMounted(async () => {
   try {
     const snapshot = await invoke<SettingsSnapshot>('load_settings');
     applySnapshot(snapshot);
+    try { runtime.value = await invoke<BrowserRuntime>('browser_runtime'); } catch { /* Keep unknown status on diagnostic failure. */ }
     if (import.meta.env.MODE === 'smoke') {
       const phase = await invoke<string>('smoke_phase');
       if (phase === 'write') {
-        const changed = { ...snapshot.settings, quality: '1080' as const, browserAutoDetect: false };
-        await invoke('save_settings', { settings: changed });
+        editor.value!.open();
+        Object.assign(editor.value!.state.draft, { quality: '1080', browserAutoDetect: false,
+          downloadDirectory: snapshot.defaults.downloadDirectory + ' 한글' });
+        await editor.value!.save((settings) => invoke<Settings>('save_settings', { settings }));
         const loaded = await invoke<SettingsSnapshot>('load_settings');
-        smokePassed = loaded.settings.quality === '1080' && !loaded.settings.browserAutoDetect;
+        smokePassed = !editor.value!.state.error && loaded.settings.quality === '1080'
+          && !loaded.settings.browserAutoDetect && loaded.settings.downloadDirectory === snapshot.defaults.downloadDirectory + ' 한글';
       } else if (phase === 'restart') {
-        smokePassed = snapshot.canSave && snapshot.settings.quality === '1080' && !snapshot.settings.browserAutoDetect;
+        smokePassed = snapshot.canSave && snapshot.settings.quality === '1080' && !snapshot.settings.browserAutoDetect
+          && snapshot.settings.downloadDirectory === snapshot.defaults.downloadDirectory + ' 한글';
       } else if (phase === 'corrupt') {
         const protectedOriginal = !snapshot.canSave && snapshot.canRecover;
         const recovered = await invoke<SettingsSnapshot>('recover_settings');
         smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
+        applySnapshot(recovered);
       } else if (phase === 'future') {
         smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
       }
+      smokePassed = smokePassed && runtime.value?.connectionActionsAvailable === false;
+      // Exercise the internal model in a hidden WebView, without clicks or keyboard events.
+      editor.value?.open();
+      await nextTick();
+      smokePassed = smokePassed && document.querySelectorAll('dialog').length === 1
+        && document.querySelector<HTMLDialogElement>('dialog')?.open === true
+        && document.querySelector('#extension-id') !== null;
+      editor.value?.reset();
+      editor.value?.cancel();
+      await nextTick();
+      smokePassed = smokePassed && document.querySelector('dialog') === null;
     } else if (snapshot.notice) {
       editor.value?.open();
     }
@@ -86,8 +111,8 @@ onMounted(async () => {
       <h2 id="jobs-heading">다운로드</h2>
       <div class="table-scroll"><table><thead><tr><th>제목</th><th>화질</th><th>진행률 / 속도</th><th>상태</th><th>작업</th></tr></thead><tbody><tr><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr></tbody></table></div>
     </section>
-    <footer class="status-row"><button disabled>다운로드 폴더 열기</button><p class="hint" role="status">브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.</p></footer>
+    <footer class="status-row"><button :disabled="!snapshotState?.canSave" @click="openDownloadFolder">다운로드 폴더 열기</button><p class="hint" role="status">{{ actionMessage || '브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.' }}</p></footer>
     <div v-if="startupError" class="error" role="alert">{{ startupError }} <button @click="readSettings">설정 다시 읽기</button></div>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
   </main>
 </template>

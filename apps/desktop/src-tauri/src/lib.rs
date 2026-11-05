@@ -48,7 +48,11 @@ pub fn run() {
             validate_download_directory,
             load_settings,
             save_settings,
-            recover_settings
+            recover_settings,
+            browser::browser_runtime,
+            browser::open_extension_folder,
+            browser::open_chrome_extensions,
+            browser::open_download_folder
         ]);
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -58,6 +62,10 @@ pub fn run() {
         load_settings,
         save_settings,
         recover_settings,
+        browser::browser_runtime,
+        browser::open_extension_folder,
+        browser::open_chrome_extensions,
+        browser::open_download_folder,
         smoke_phase,
         smoke_ready
     ]);
@@ -83,6 +91,7 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
         .map(|path| path.join("Videos").to_string_lossy().into_owned())
         .map_err(|_| "DOWNLOAD_DIRECTORY_UNAVAILABLE".into())
 }
+mod browser;
 mod folders;
 mod settings;
 
@@ -127,11 +136,15 @@ fn save_settings(
 }
 
 #[tauri::command]
-async fn pick_download_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn pick_download_directory(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
+            .set_parent(&window)
             .set_title("다운로드 저장 위치")
             .blocking_pick_folder()
     })

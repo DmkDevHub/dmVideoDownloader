@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import type { Settings } from './settings';
+import BrowserConnection from './BrowserConnection.vue';
+import type { BrowserRuntime } from './browserConnection';
 
-defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string }>();
+defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string; savedId?: string; runtime?: BrowserRuntime }>();
 defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: [] }>();
 const dialog = ref<HTMLDialogElement>();
 onMounted(() => dialog.value?.showModal());
@@ -32,6 +34,7 @@ onMounted(() => dialog.value?.showModal());
         <label class="check"><input v-model="draft.completionNotification" type="checkbox" />다운로드 완료 알림</label>
       </fieldset>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <BrowserConnection v-model:extension-id="draft.browserExtensionId" :saved-id="savedId ?? ''" :busy="busy" :can-save="canSave !== false" :runtime="runtime" />
       <p v-if="notice" class="error" role="status">{{ notice }}</p>
       <button v-if="canRecover" type="button" :disabled="busy" @click="$emit('recover')">손상 파일 백업 후 기본값 저장</button>
       <p class="hint">다운로드 옵션은 새 작업부터 적용됩니다. 기본값 복원은 저장을 눌러야 적용됩니다.</p>

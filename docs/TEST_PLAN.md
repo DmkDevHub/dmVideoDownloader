@@ -108,3 +108,28 @@
 앱 EXE 증거 경로: `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe` (생성 산출물, 커밋 제외). smoke 성공 출력: `SMOKE_PASS: native window, Vue mount, frontend-to-Rust IPC`.
 
 화면 클릭·입력 자동화는 실행하지 않았다. Vue 내부 렌더링은 브라우저 마운트를 대신하지 않으며 실제 마운트는 별도 네이티브 smoke에서 검증했다. 화면 배치·사용자 조작·릴리스 배포 및 TC-01~20 제품 기능 검증은 NOT RUN이다. R1 이후 작업은 착수하지 않았다.
+
+## 8. R1 메인 화면·설정 검증 결과
+
+날짜/환경: 2026-11-05 / 앞선 ENVIRONMENT의 Windows 11 Pro 개발 컴퓨터. R1-01~06을 순차 구현했으며 R2 이후는 미착수이다. 화면 클릭·키 입력 자동화, 실제 OS picker·Chrome·탐색기 실행은 수행하지 않았다.
+
+- `npm run verify`: 최종 PASS. 타입 검사 → Vitest 4개 파일·13개 테스트 → 실제 숨김 Windows 앱 4회 → Rust 8개 테스트 → 일반 디버그 EXE 빌드.
+- `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`: PASS.
+- `cargo clippy --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings`: PASS.
+- `git diff --check`: PASS.
+
+| 검증 ID/항목 | 실행 방법과 결과 | 남은 범위 |
+|---|---|---|
+| R1-01 메인 화면 | 내부 렌더링으로 URL·후보/작업 목록·확인 필요 상태 확인, 실제 WebView 마운트 PASS | 시각적 배치·분석/감지/다운로드 미검증 |
+| R1-02 설정창 | 모델 열기/중복 열기/취소/기본값/실패 저장, 내부 렌더링으로 옵션 확인. 실제 숨김 WebView에서 모델 호출→단일 모달 마운트→기본값→취소/제거 PASS | 실제 포인터/키보드 UX 미검증 |
+| TC-01 | 숨김 앱에서 한글 저장 경로·화질·자동 감지 옵션 변경/저장→프로세스 종료→새 프로세스 로드, UI 모델과 디스크 값 일치 PASS | 새 다운로드에 실제 적용은 R5 미구현으로 NOT RUN |
+| TC-02 | 상대/UNC/장치/예약 이름/경로 순회/보호 폴더 거부, 한글 폴더 생성·쓰기 probe 정리·기존 파일 보존 PASS. picker 어댑터의 성공/취소/오류 검사 PASS | 실제 OS picker 선택·ACL 기반 디렉터리 거부는 NOT RUN |
+| TC-14 | 잘못된 JSON·타입·범위·중복/추가 필드 검사, 손상 원본 자동 덮어쓰기 거부, 명시적 백업 후 복구, 미래 스키마 저장/복구 거부 PASS. 실제 앱 단계와 파일 바이트 검사로 보완 | 화면 조작 없음 |
+| TC-15 | 저장 후 새 적용 객체 생성, 이전 스냅샷·미저장 초안 분리 PASS | 진행 중 다운로드 유지 시나리오는 R5 미구현으로 NOT RUN |
+| TC-16 | 같은 설정창 안의 수동 개발자 모드/unpacked/실제 ID/등록/양쪽 테스트 안내, 리소스 진단 PASS | Chrome 최초 설치·수동 로드는 R2/R3/R7에서 검증, 현재 NOT RUN |
+| TC-17 | 실제 왕복 근거 없는 연결됨 방지, 마지막 성공과 현재 상태 분리, 미구현 연결 작업 비활성 UI PASS | Native Messaging 왕복·30초 실제 대기/만료는 R3 미구현으로 NOT RUN |
+| TC-18~20 | ID 형식·ID 변경/폴더 이동 안내, 리소스 존재와 설치/연결 성공 구별 PASS | 실제 HKCU 등록·소유권 해제·다중 복사본/뷰·정책/이동 검증 NOT RUN |
+
+숨김 통합 테스트는 별도 `.test-output/smoke-*`만 사용한다. `write`, `restart`, `corrupt`, `future` 단계마다 종료 코드 0과 `SMOKE_PASS`를 확인하고, 한글 저장 경로·손상 백업 바이트·미래 파일 원본은 실행기에서 별도 읽어 검사한다. 테스트 전용 IPC/경로 주입은 일반 빌드에 포함되지 않는다. 사용자 설정·다운로드 폴더·레지스트리와 Chrome 프로필을 변경하지 않았다.
+
+현재 R1 완료는 메인/설정 기능과 Chrome 설치·연결 **UI 구성** 범위이다. 확장 감지, 호스트 등록·연결, 실제 다운로드 성공을 뜻하지 않는다.

@@ -34,7 +34,11 @@ for (const phase of ['write', 'restart', 'corrupt', 'future']) {
     console.error('Native smoke validation failed.', phase, result.status, result.stderr);
     process.exit(1);
   }
-  if (phase === 'restart') assert.equal(JSON.parse(readFileSync(settingsPath, 'utf8')).quality, '1080');
+  if (phase === 'restart') {
+    const saved = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.equal(saved.quality, '1080');
+    assert.equal(saved.downloadDirectory, resolve(testRoot, 'Downloads/Videos 한글'));
+  }
   if (phase === 'corrupt') {
     const backup = readdirSync(resolve(testRoot, 'data')).find(name => name.startsWith('settings.backup-'));
     assert.ok(backup);

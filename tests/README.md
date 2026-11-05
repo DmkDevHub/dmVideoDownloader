@@ -1,5 +1,7 @@
 # 내부 자동화 검증 경계
 
-공통 검증과 향후 IPC·미디어 테스트 자산을 위한 폴더이다. 루트의 `npm test`는 `apps/desktop/src/**/*.test.ts`를 Vitest로 실행한다. 현재 Vue 컴포넌트의 내부 렌더링과 최소 보안 설정을 검사한다. Windows 실행 검증은 `../scripts/smoke.mjs`의 숨김 WebView 검사이다. `npm run verify`는 타입 검사·단위 테스트·실제 숨김 WebView 실행·일반 디버그 빌드를 순서대로 수행한다.
+공통 검증과 향후 IPC·미디어 테스트 자산을 위한 폴더이다. 루트의 `npm test`는 `apps/desktop/src/**/*.test.ts`를 Vitest로 실행한다. Vue 내부 렌더링, 설정 편집/취소/저장 실패, ID 및 연결 상태, 최소 권한/CSP를 검사한다. `npm run test:rust`는 임시 디렉터리에서 폴더·스키마·설정 저장/복구·경합·배포 리소스를 검사한다.
+
+Windows 실행 검증은 `../scripts/smoke.mjs`이다. 별도 `.test-output/smoke-*`에서 숨김 프로세스를 저장/재시작/손상/미래 스키마의 네 단계로 실행한다. 내부 모델로 설정창을 열고 취소하며 실제 WebView 마운트와 설정 파일·백업을 확인한다. 클릭·키 입력이나 Chrome/탐색기/OS 폴더 선택창 실행은 하지 않는다. `npm run verify`는 타입 검사·Vitest·숨김 WebView·Rust 테스트·일반 디버그 빌드 순서로 실행한다.
 
 단위 테스트는 코드 근처에 배치해도 된다. 실제 Chrome·다운로드 기능이 없을 때 모의 테스트만으로 해당 인수 조건을 완료 처리하지 않는다. 화면 클릭·입력 자동화는 사용하지 않는다.
