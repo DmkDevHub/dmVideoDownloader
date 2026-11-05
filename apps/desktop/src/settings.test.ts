@@ -68,3 +68,25 @@ test('failed save leaves the dialog and applied values intact; success applies a
   editor.open();
   expect(editor.state.draft.quality).toBe('720');
 });
+
+test('read-only settings expose explicit recovery without enabling ordinary save', async () => {
+  const html = await renderToString(createSSRApp(SettingsDialog, {
+    draft: defaultSettings('D:\\Videos'), busy: false, error: '', canSave: false,
+    canRecover: true, notice: '손상 파일을 보존했습니다.',
+  }));
+  expect(html).toContain('손상 파일 백업 후 기본값 저장');
+  expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/);
+});
+
+test('saving creates a new applied snapshot and cannot mutate a previous one', async () => {
+  const editor = createSettingsEditor(defaultSettings('D:\\Videos'), defaultSettings('D:\\Videos'));
+  const previous = editor.state.current;
+  editor.open();
+  editor.state.draft.quality = '720';
+  await editor.save(async (draft) => draft);
+  editor.open();
+  editor.state.draft.format = 'mkv';
+  expect(previous.quality).toBe('best');
+  expect(editor.state.current.quality).toBe('720');
+  expect(editor.state.current.format).toBe('auto');
+});

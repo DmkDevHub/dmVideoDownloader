@@ -82,6 +82,14 @@ impl Settings {
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Settings, &'static str> {
+    let raw: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| "INVALID_SETTINGS")?;
+    if raw
+        .get("schemaVersion")
+        .and_then(|v| v.as_u64())
+        .is_some_and(|version| version > 1)
+    {
+        return Err("UNSUPPORTED_SETTINGS_VERSION");
+    }
     let settings: Settings = serde_json::from_slice(bytes).map_err(|_| "INVALID_SETTINGS")?;
     settings.validate()?;
     Ok(settings)
@@ -92,6 +100,9 @@ pub fn parse(bytes: &[u8]) -> Result<Settings, &'static str> {
 pub struct Snapshot {
     pub settings: Settings,
     pub defaults: Settings,
+    pub notice: Option<String>,
+    pub can_save: bool,
+    pub can_recover: bool,
 }
 
 pub struct Store {
@@ -126,7 +137,13 @@ impl Store {
             .truncate(false)
             .share_mode(0)
             .open(lock_path)
-            .map_err(|_| "SETTINGS_BUSY")
+            .map_err(|error| {
+                if matches!(error.raw_os_error(), Some(32 | 33)) {
+                    "SETTINGS_BUSY"
+                } else {
+                    "SETTINGS_NOT_WRITABLE"
+                }
+            })
     }
     fn read(&self) -> Result<Vec<u8>, &'static str> {
         let mut bytes = Vec::new();
@@ -174,23 +191,69 @@ impl Store {
             folders::validate_directory(&self.defaults.download_directory)?;
             self.write(&self.defaults, true)?
         };
-        let settings = parse(&bytes)?;
+        let parsed = parse(&bytes);
         self.baseline = Some(bytes);
-        Ok(Snapshot {
-            settings,
-            defaults: self.defaults.clone(),
-        })
+        match parsed {
+            Ok(settings) => Ok(Snapshot {
+                settings,
+                defaults: self.defaults.clone(),
+                notice: None,
+                can_save: true,
+                can_recover: false,
+            }),
+            Err(code) => Ok(Snapshot {
+                settings: self.defaults.clone(),
+                defaults: self.defaults.clone(),
+                notice: Some(code.to_owned()),
+                can_save: false,
+                can_recover: code != "UNSUPPORTED_SETTINGS_VERSION",
+            }),
+        }
     }
     pub fn save(&mut self, settings: Settings) -> Result<Settings, &'static str> {
         settings.validate()?;
         let _guard = self.lock()?;
         let baseline = self.baseline.as_ref().ok_or("SETTINGS_NOT_LOADED")?;
+        parse(baseline)?;
         if self.read()? != *baseline {
             return Err("SETTINGS_CHANGED");
         }
         folders::validate_directory(&settings.download_directory)?;
         self.baseline = Some(self.write(&settings, false)?);
         Ok(settings)
+    }
+
+    pub fn recover(&mut self) -> Result<Snapshot, &'static str> {
+        let _guard = self.lock()?;
+        let before = self.baseline.as_ref().ok_or("SETTINGS_NOT_LOADED")?;
+        if self.read()? != *before {
+            return Err("SETTINGS_CHANGED");
+        }
+        match parse(before) {
+            Ok(_) => return Err("RECOVERY_NOT_REQUIRED"),
+            Err("UNSUPPORTED_SETTINGS_VERSION") => return Err("UNSUPPORTED_SETTINGS_VERSION"),
+            Err(_) => (),
+        }
+        self.defaults.validate()?;
+        folders::validate_directory(&self.defaults.download_directory)?;
+        let mut backup = tempfile::Builder::new()
+            .prefix("settings.backup-")
+            .suffix(".json")
+            .tempfile_in(self.root.join("data"))
+            .map_err(|_| "BACKUP_FAILED")?;
+        backup
+            .write_all(before)
+            .and_then(|_| backup.as_file().sync_all())
+            .map_err(|_| "BACKUP_FAILED")?;
+        backup.keep().map_err(|_| "BACKUP_FAILED")?;
+        self.baseline = Some(self.write(&self.defaults, false)?);
+        Ok(Snapshot {
+            settings: self.defaults.clone(),
+            defaults: self.defaults.clone(),
+            notice: Some("SETTINGS_RECOVERED".into()),
+            can_save: true,
+            can_recover: false,
+        })
     }
 }
 
@@ -277,5 +340,54 @@ mod tests {
             .unwrap()
             .replacen('{', "{\"schemaVersion\":1,", 1);
         assert!(parse(duplicate.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn corruption_is_read_only_until_explicit_backup_and_recovery() {
+        let root = tempfile::tempdir().unwrap();
+        let mut service = store(root.path());
+        service.load().unwrap();
+        let damaged = b"{broken-json";
+        fs::write(service.path(), damaged).unwrap();
+        let snapshot = service.load().unwrap();
+        assert!(!snapshot.can_save && snapshot.can_recover);
+        assert_eq!(fs::read(service.path()).unwrap(), damaged);
+        assert!(service.save(snapshot.settings).is_err());
+        let recovered = service.recover().unwrap();
+        assert!(recovered.can_save && !recovered.can_recover);
+        let backup = fs::read_dir(root.path().join("data"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("settings.backup-")
+            })
+            .unwrap();
+        assert_eq!(fs::read(backup).unwrap(), damaged);
+        assert_eq!(
+            store(root.path()).load().unwrap().settings,
+            service.defaults
+        );
+    }
+
+    #[test]
+    fn future_schema_and_concurrent_lock_are_preserved() {
+        let root = tempfile::tempdir().unwrap();
+        let mut service = store(root.path());
+        service.load().unwrap();
+        let future = b"{\"schemaVersion\":99,\"futureField\":true}";
+        fs::write(service.path(), future).unwrap();
+        let loaded = service.load().unwrap();
+        assert!(!loaded.can_save && !loaded.can_recover);
+        assert!(matches!(
+            service.recover(),
+            Err("UNSUPPORTED_SETTINGS_VERSION")
+        ));
+        assert_eq!(fs::read(service.path()).unwrap(), future);
+        let held = service.lock().unwrap();
+        assert!(matches!(store(root.path()).load(), Err("SETTINGS_BUSY")));
+        drop(held);
     }
 }

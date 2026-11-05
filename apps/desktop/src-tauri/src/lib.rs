@@ -47,7 +47,8 @@ pub fn run() {
             pick_download_directory,
             validate_download_directory,
             load_settings,
-            save_settings
+            save_settings,
+            recover_settings
         ]);
     #[cfg(feature = "smoke-test")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -56,6 +57,8 @@ pub fn run() {
         validate_download_directory,
         load_settings,
         save_settings,
+        recover_settings,
+        smoke_phase,
         smoke_ready
     ]);
 
@@ -82,6 +85,23 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
 }
 mod folders;
 mod settings;
+
+#[cfg(feature = "smoke-test")]
+#[tauri::command]
+fn smoke_phase() -> String {
+    std::env::var("DM_SMOKE_PHASE").unwrap_or_else(|_| "write".into())
+}
+
+#[tauri::command]
+fn recover_settings(
+    store: tauri::State<std::sync::Mutex<settings::Store>>,
+) -> Result<settings::Snapshot, String> {
+    store
+        .lock()
+        .map_err(|_| "SETTINGS_BUSY")?
+        .recover()
+        .map_err(str::to_owned)
+}
 
 #[tauri::command]
 fn load_settings(

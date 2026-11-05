@@ -8,17 +8,51 @@ import { createSettingsEditor, settingsError, type Settings, type SettingsSnapsh
 const address = ref('');
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
 const startupError = ref('');
+const snapshotState = ref<SettingsSnapshot>();
+
+function applySnapshot(snapshot: SettingsSnapshot) {
+  snapshotState.value = snapshot;
+  editor.value = createSettingsEditor(snapshot.settings, snapshot.defaults);
+  startupError.value = '';
+}
+async function readSettings() {
+  try { applySnapshot(await invoke<SettingsSnapshot>('load_settings')); }
+  catch (error) { startupError.value = settingsError(error); }
+}
+async function recoverSettings() {
+  if (!editor.value || editor.value.state.busy || !snapshotState.value?.canRecover) return;
+  editor.value.state.busy = true;
+  try {
+    applySnapshot(await invoke<SettingsSnapshot>('recover_settings'));
+    editor.value?.open();
+  } catch (error) {
+    if (editor.value) editor.value.state.error = settingsError(error);
+  } finally { if (editor.value) editor.value.state.busy = false; }
+}
 
 onMounted(async () => {
   let smokePassed = false;
   try {
     const snapshot = await invoke<SettingsSnapshot>('load_settings');
-    editor.value = createSettingsEditor(snapshot.settings, snapshot.defaults);
+    applySnapshot(snapshot);
     if (import.meta.env.MODE === 'smoke') {
-      const changed = { ...snapshot.settings, quality: '1080' as const };
-      await invoke('save_settings', { settings: changed });
-      const loaded = await invoke<SettingsSnapshot>('load_settings');
-      smokePassed = loaded.settings.quality === '1080';
+      const phase = await invoke<string>('smoke_phase');
+      if (phase === 'write') {
+        const changed = { ...snapshot.settings, quality: '1080' as const, browserAutoDetect: false };
+        await invoke('save_settings', { settings: changed });
+        const loaded = await invoke<SettingsSnapshot>('load_settings');
+        smokePassed = loaded.settings.quality === '1080' && !loaded.settings.browserAutoDetect;
+      } else if (phase === 'restart') {
+        smokePassed = snapshot.canSave && snapshot.settings.quality === '1080' && !snapshot.settings.browserAutoDetect;
+      } else if (phase === 'corrupt') {
+        const protectedOriginal = !snapshot.canSave && snapshot.canRecover;
+        const recovered = await invoke<SettingsSnapshot>('recover_settings');
+        smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
+      } else if (phase === 'future') {
+        smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
+      }
+    } else if (snapshot.notice) {
+      editor.value?.open();
     }
   } catch (error) {
     startupError.value = settingsError(error);
@@ -42,7 +76,7 @@ onMounted(async () => {
       <label for="video-url">영상 URL 직접 입력</label>
       <div class="input-row"><input id="video-url" v-model="address" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" /><button disabled>분석</button></div>
       <p class="hint">인증 없이 접근 가능한 공개 영상만 지원합니다. 분석 기능은 준비 중입니다.</p>
-      <div class="status-row"><span class="badge">Chrome 연동: 확인 필요</span><span>자동 감지: {{ editor ? (editor.state.current.browserAutoDetect ? '켜짐 · 연결 후 동기화 필요' : '꺼짐') : '설정 읽는 중' }}</span></div>
+      <div class="status-row"><span class="badge">Chrome 연동: 확인 필요</span><span>자동 감지: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐 · 연결 후 동기화 필요' : '꺼짐') : '설정 확인 필요' }}</span></div>
     </section>
     <section class="panel" aria-labelledby="candidates-heading">
       <h2 id="candidates-heading">감지된 영상</h2>
@@ -53,7 +87,7 @@ onMounted(async () => {
       <div class="table-scroll"><table><thead><tr><th>제목</th><th>화질</th><th>진행률 / 속도</th><th>상태</th><th>작업</th></tr></thead><tbody><tr><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr></tbody></table></div>
     </section>
     <footer class="status-row"><button disabled>다운로드 폴더 열기</button><p class="hint" role="status">브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.</p></footer>
-    <p v-if="startupError" class="error" role="alert">{{ startupError }}</p>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" @cancel="editor.cancel()" @reset="editor.reset()" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
+    <div v-if="startupError" class="error" role="alert">{{ startupError }} <button @click="readSettings">설정 다시 읽기</button></div>
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
   </main>
 </template>

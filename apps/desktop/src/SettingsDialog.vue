@@ -2,8 +2,8 @@
 import { onMounted, ref } from 'vue';
 import type { Settings } from './settings';
 
-defineProps<{ draft: Settings; busy: boolean; error: string }>();
-defineEmits<{ cancel: []; reset: []; save: []; browse: [] }>();
+defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string }>();
+defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: [] }>();
 const dialog = ref<HTMLDialogElement>();
 onMounted(() => dialog.value?.showModal());
 </script>
@@ -32,8 +32,10 @@ onMounted(() => dialog.value?.showModal());
         <label class="check"><input v-model="draft.completionNotification" type="checkbox" />다운로드 완료 알림</label>
       </fieldset>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="notice" class="error" role="status">{{ notice }}</p>
+      <button v-if="canRecover" type="button" :disabled="busy" @click="$emit('recover')">손상 파일 백업 후 기본값 저장</button>
       <p class="hint">다운로드 옵션은 새 작업부터 적용됩니다. 기본값 복원은 저장을 눌러야 적용됩니다.</p>
-      <footer class="dialog-actions"><button type="button" :disabled="busy" @click="$emit('reset')">기본값 복원</button><span></span><button type="button" :disabled="busy" @click="$emit('cancel')">취소</button><button class="primary" type="submit" :disabled="busy">{{ busy ? '처리 중…' : '저장' }}</button></footer>
+      <footer class="dialog-actions"><button type="button" :disabled="busy" @click="$emit('reset')">기본값 복원</button><span></span><button type="button" :disabled="busy" @click="$emit('cancel')">취소</button><button class="primary" type="submit" :disabled="busy || canSave === false">{{ busy ? '처리 중…' : '저장' }}</button></footer>
     </form>
   </dialog>
 </template>

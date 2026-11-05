@@ -12,7 +12,7 @@ export interface Settings {
   browserExtensionId: string;
   completionNotification: boolean;
 }
-export interface SettingsSnapshot { settings: Settings; defaults: Settings }
+export interface SettingsSnapshot { settings: Settings; defaults: Settings; notice: string | null; canSave: boolean; canRecover: boolean }
 
 export function settingsError(error: unknown): string {
   const code = typeof error === 'string' ? error : '';
@@ -21,6 +21,10 @@ export function settingsError(error: unknown): string {
     SETTINGS_BUSY: '다른 앱이 설정을 사용 중입니다. 잠시 후 다시 시도하세요.',
     INVALID_EXTENSION_ID: '확장 ID는 소문자 a~p 32자여야 합니다.',
     UNSUPPORTED_SETTINGS_VERSION: '지원하지 않는 설정 버전입니다. 원본 파일을 보존하고 호환되는 앱을 사용하세요.',
+    INVALID_SETTINGS: '설정 파일이 손상되었거나 형식이 맞지 않습니다. 원본을 보존했습니다. 백업 후 기본값으로 복구할 수 있습니다.',
+    SETTINGS_RECOVERED: '원본은 data 폴더의 settings.backup-*.json에 보관하고 기본값으로 복구했습니다.',
+    SETTINGS_NOT_WRITABLE: '앱 폴더에 설정을 쓸 수 없습니다. 포터블 폴더 전체를 쓰기 가능한 위치로 옮겨 실행하세요.',
+    BACKUP_FAILED: '원본 설정 백업에 실패했습니다. 기존 설정을 보존하고 복구를 중단했습니다.',
   };
   return messages[code] ?? '설정을 저장하거나 읽을 수 없습니다. 경로·쓰기 권한·설정 파일을 확인하세요. 기존 파일은 임의로 덮어쓰지 않습니다.';
 }
