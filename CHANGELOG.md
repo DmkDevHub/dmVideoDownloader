@@ -2,6 +2,13 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-05 — [R0-03] 소스 폴더 경계 및 빌드 규칙
+
+- 변경: `extension`, `native-host`, `shared`, `tests` 폴더의 책임/후속 구현 경계를 기록. 공통 TypeScript 설정을 `shared/tsconfig.base.json`으로 분리해 데스크톱에서 사용. `docs/BUILD.md`에 실제 빌드 명령·잠금 파일·산출물/제외 규칙 정리.
+- 자동 테스트: 폴더/필수 파일·공통 설정 연결 PowerShell 검사, `npm run build:debug`, `git diff --check` PASS. npm/Cargo 잠금 파일 변경 없음.
+- 요구사항 검증: 모듈 경계와 기존 Windows 앱 빌드 확인. 확장 manifest/실행은 R2, Native Host 프로토콜/EXE는 R3, 공통 메시지 타입/스키마는 R3-01에서 구현하며 현재 기능이 있다고 표시하지 않음. 직접 대응 TC 없음, TC-01~20 NOT RUN.
+- 문서: README 및 ROADMAP R0-03 완료 반영. 다음은 승인된 R0-04 테스트 체계 구성.
+
 ## 2026-11-05 — [R0-02] 최소 Windows 앱 실행 골격
 
 - 변경: `apps/desktop`에 Tauri 2 + Vue 3 + TypeScript + Rust 골격 구성. 루트 npm 워크스페이스, npm/Cargo 잠금 파일, 최소 CSP·권한 없는 설정 및 빌드 산출물 제외 규칙 추가. 영상 감지·다운로드·설정 기능은 미구현.
