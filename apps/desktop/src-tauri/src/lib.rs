@@ -18,10 +18,14 @@ fn smoke_ready(app: tauri::AppHandle, window: tauri::WebviewWindow, mounted: boo
 }
 
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![default_download_directory]);
     #[cfg(feature = "smoke-test")]
     let builder = builder
-        .invoke_handler(tauri::generate_handler![smoke_ready])
+        .invoke_handler(tauri::generate_handler![
+            default_download_directory,
+            smoke_ready
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -34,4 +38,13 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("desktop runtime failed");
+}
+use tauri::Manager;
+
+#[tauri::command]
+fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .download_dir()
+        .map(|path| path.join("Videos").to_string_lossy().into_owned())
+        .map_err(|_| "DOWNLOAD_DIRECTORY_UNAVAILABLE".into())
 }

@@ -1,25 +1,36 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import SettingsDialog from './SettingsDialog.vue';
+import { createSettingsEditor, defaultSettings } from './settings';
 
 const address = ref('');
+const editor = ref<ReturnType<typeof createSettingsEditor>>();
+const startupError = ref('');
 
-// Included only in the separate smoke build; normal builds do not call test IPC.
-if (import.meta.env.MODE === 'smoke') {
-  onMounted(async () => {
-    const { invoke } = await import('@tauri-apps/api/core');
+onMounted(async () => {
+  try {
+    const directory = await invoke<string>('default_download_directory');
+    const defaults = defaultSettings(directory);
+    editor.value = createSettingsEditor(defaults, defaults);
+  } catch {
+    startupError.value = '기본 다운로드 위치를 확인하지 못했습니다. Windows 다운로드 폴더를 확인하세요.';
+  }
+  // Compiled out of normal builds.
+  if (import.meta.env.MODE === 'smoke') {
     await invoke('smoke_ready', {
-      mounted: document.querySelector('[data-app-ready]') !== null,
+      mounted: document.querySelector('[data-app-ready]') !== null && !!editor.value,
     });
-  });
-}
+  }
+});
 </script>
 
 <template>
   <main data-app-ready>
     <header class="app-header">
       <div><p class="eyebrow">개인용 · Windows 포터블</p><h1>영상 다운로더</h1></div>
-      <button type="button" disabled title="설정 창은 다음 작업에서 제공됩니다">설정</button>
+      <button type="button" :disabled="!editor" @click="editor?.open()">설정</button>
     </header>
     <section class="panel" aria-label="영상 주소">
       <label for="video-url">영상 URL 직접 입력</label>
@@ -36,5 +47,7 @@ if (import.meta.env.MODE === 'smoke') {
       <div class="table-scroll"><table><thead><tr><th>제목</th><th>화질</th><th>진행률 / 속도</th><th>상태</th><th>작업</th></tr></thead><tbody><tr><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr></tbody></table></div>
     </section>
     <footer class="status-row"><button disabled>다운로드 폴더 열기</button><p class="hint" role="status">브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.</p></footer>
+    <p v-if="startupError" class="error" role="alert">{{ startupError }}</p>
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" @cancel="editor.cancel()" @reset="editor.reset()" />
   </main>
 </template>
