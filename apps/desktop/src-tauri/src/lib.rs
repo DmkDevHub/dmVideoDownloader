@@ -20,27 +20,44 @@ fn smoke_ready(app: tauri::AppHandle, window: tauri::WebviewWindow, mounted: boo
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            default_download_directory,
-            pick_download_directory,
-            validate_download_directory
-        ]);
-    #[cfg(feature = "smoke-test")]
-    let builder = builder
+        .setup(|app| {
+            #[cfg(feature = "smoke-test")]
+            let root = std::path::PathBuf::from(
+                std::env::var_os("DM_SMOKE_ROOT").ok_or("missing smoke root")?,
+            );
+            #[cfg(not(feature = "smoke-test"))]
+            let root = std::env::current_exe()?
+                .parent()
+                .ok_or("missing executable directory")?
+                .to_path_buf();
+            let directory = default_download_directory(app.handle().clone())?;
+            app.manage(std::sync::Mutex::new(settings::Store::new(root, directory)));
+            #[cfg(feature = "smoke-test")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    handle.exit(1);
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             default_download_directory,
             pick_download_directory,
             validate_download_directory,
-            smoke_ready
-        ])
-        .setup(|app| {
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(30));
-                handle.exit(1);
-            });
-            Ok(())
-        });
+            load_settings,
+            save_settings
+        ]);
+    #[cfg(feature = "smoke-test")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        default_download_directory,
+        pick_download_directory,
+        validate_download_directory,
+        load_settings,
+        save_settings,
+        smoke_ready
+    ]);
 
     builder
         .run(tauri::generate_context!())
@@ -50,12 +67,44 @@ use tauri::Manager;
 
 #[tauri::command]
 fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(feature = "smoke-test")]
+    if let Some(root) = std::env::var_os("DM_SMOKE_ROOT") {
+        return Ok(std::path::PathBuf::from(root)
+            .join("Downloads")
+            .join("Videos")
+            .to_string_lossy()
+            .into_owned());
+    }
     app.path()
         .download_dir()
         .map(|path| path.join("Videos").to_string_lossy().into_owned())
         .map_err(|_| "DOWNLOAD_DIRECTORY_UNAVAILABLE".into())
 }
 mod folders;
+mod settings;
+
+#[tauri::command]
+fn load_settings(
+    store: tauri::State<std::sync::Mutex<settings::Store>>,
+) -> Result<settings::Snapshot, String> {
+    store
+        .lock()
+        .map_err(|_| "SETTINGS_BUSY")?
+        .load()
+        .map_err(str::to_owned)
+}
+
+#[tauri::command]
+fn save_settings(
+    settings: settings::Settings,
+    store: tauri::State<std::sync::Mutex<settings::Store>>,
+) -> Result<settings::Settings, String> {
+    store
+        .lock()
+        .map_err(|_| "SETTINGS_BUSY")?
+        .save(settings)
+        .map_err(str::to_owned)
+}
 
 #[tauri::command]
 async fn pick_download_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {

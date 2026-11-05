@@ -32,8 +32,8 @@ onMounted(() => dialog.value?.showModal());
         <label class="check"><input v-model="draft.completionNotification" type="checkbox" />다운로드 완료 알림</label>
       </fieldset>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <p class="hint">다운로드 옵션은 새 작업부터 적용됩니다. 설정 저장 기능은 준비 중입니다.</p>
-      <footer class="dialog-actions"><button type="button" :disabled="busy" @click="$emit('reset')">기본값 복원</button><span></span><button type="button" :disabled="busy" @click="$emit('cancel')">취소</button><button class="primary" type="submit" disabled>저장</button></footer>
+      <p class="hint">다운로드 옵션은 새 작업부터 적용됩니다. 기본값 복원은 저장을 눌러야 적용됩니다.</p>
+      <footer class="dialog-actions"><button type="button" :disabled="busy" @click="$emit('reset')">기본값 복원</button><span></span><button type="button" :disabled="busy" @click="$emit('cancel')">취소</button><button class="primary" type="submit" :disabled="busy">{{ busy ? '처리 중…' : '저장' }}</button></footer>
     </form>
   </dialog>
 </template>

@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 
 if (process.platform !== 'win32') {
   throw new Error('Native WebView smoke validation requires Windows.');
@@ -15,8 +16,11 @@ const build = spawnSync(process.execPath, [cli, 'build', '--debug', '--no-bundle
 if (build.error) throw build.error;
 if (build.status !== 0) process.exit(build.status ?? 1);
 
+mkdirSync(resolve(root, '.test-output'), { recursive: true });
+const testRoot = mkdtempSync(resolve(root, '.test-output/smoke-'));
 const result = spawnSync(resolve(desktop, 'src-tauri/target/debug/dm-video-desktop.exe'), [], {
   cwd: root, encoding: 'utf8', timeout: 45_000, windowsHide: true,
+  env: { ...process.env, DM_SMOKE_ROOT: testRoot },
 });
 if (result.error) throw result.error;
 if (result.status !== 0 || !result.stdout.includes('SMOKE_PASS:')) {

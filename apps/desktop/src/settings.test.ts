@@ -52,3 +52,19 @@ test('picker cancellation and failure preserve the draft and release busy state'
   expect(editor.state.draft.downloadDirectory).toBe('E:\\Videos');
   expect(editor.state.current.downloadDirectory).toBe('D:\\Videos');
 });
+
+test('failed save leaves the dialog and applied values intact; success applies a copy', async () => {
+  const editor = createSettingsEditor(defaultSettings('D:\\Videos'), defaultSettings('D:\\Videos'));
+  editor.open();
+  editor.state.draft.quality = '720';
+  await editor.save(async () => { throw 'SETTINGS_CHANGED'; });
+  expect(editor.state.open).toBe(true);
+  expect(editor.state.current.quality).toBe('best');
+  expect(editor.state.draft.quality).toBe('720');
+  expect(editor.state.error).toContain('다른 앱');
+  await editor.save(async (draft) => draft);
+  expect(editor.state.open).toBe(false);
+  expect(editor.state.current.quality).toBe('720');
+  editor.open();
+  expect(editor.state.draft.quality).toBe('720');
+});
