@@ -1,0 +1,61 @@
+# Browser Video Downloader — Codex 개발 설계 패키지
+
+- 설계 버전: **v1.2** (2026-11-05)
+- 대상: Windows 11 개인용 브라우저 감지 기반 영상 다운로더
+- 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
+- 상태: **설계 확정 / 구현 시작 전** (작동하는 소스가 포함된 패키지가 아님)
+
+## 한눈에 보는 요구사항
+
+- Chrome 확장(Manifest V3)으로 브라우저의 **비인증 영상**을 자동 감지한다.
+- MP4/WebM 및 공개 HLS(m3u8)/DASH(mpd) 스트림을 분석한다.
+- 감지 목록 및 직접 URL 입력을 제공하고 **사용자 클릭 시에만** 다운로드한다.
+- 가능한 범위에서 최고 화질(분리 영상·음성 병합 포함)을 저장한다.
+- Windows **포터블 폴더 형태**로 제공하며 Tauri 2 + Vue 3 + Rust + yt-dlp + FFmpeg를 사용한다.
+- 메인 화면 1개와 **설정 창 1개**를 두고 `settings.json`에 저장한다.
+- **계정/로그인, 쿠키·토큰·인증 세션 활용, DRM 우회, DB, 클라우드 기능은 제외**한다.
+
+## Codex 시작 순서
+
+1. 이 폴더 전체를 프로젝트 루트에 복사한다.
+2. **`AGENTS.md`부터 읽고**, `docs/PRD.md`, `docs/ARCHITECTURE.md`, `ROADMAP.md`를 확인한다.
+3. `CODEX_START.md`의 첫 지시문을 Codex에 전달한다.
+4. **`ROADMAP.md`에서 가장 작은 미완료 작업 하나만** 구현하고 테스트·요구사항 검증·CHANGELOG를 함께 갱신한다.
+5. 다음 항목으로의 진행은 사용자 요청을 기다린다. Git은 사용자 직접 관리.
+
+## 문서 역할과 읽기 순서
+
+| 파일 | 책임 |
+|---|---|
+| `AGENTS.md` | Codex 상시 개발 규칙(최상위 지침) |
+| `CODEX_START.md` | 첫 실행 시 전달할 지시문 |
+| `ROADMAP.md` | 유일한 작업 순서/상태 관리 문서; 작은 체크박스 단위 |
+| `CHANGELOG.md` | 실제로 완료한 작업 단위의 변경 기록 |
+| `docs/PRD.md` | 제품 목표, 기능 요구사항, 제외 범위 및 인수 기준 |
+| `docs/ARCHITECTURE.md` | 실행 프로세스, 전체 흐름, 폴더 구조, 기술 선택 |
+| `docs/BROWSER_EXTENSION.md` | unpacked 설치 안내, MV3 자동 감지, 확장 ID, 팝업·배지 |
+| `docs/IPC_PROTOCOL.md` | Chrome ↔ Native Host ↔ Tauri 메시지 계약 |
+| `docs/DOWNLOAD_ENGINE.md` | yt-dlp, FFmpeg, 화질 선택, 작업 상태 |
+| `docs/SETTINGS.md` | 설정 UI, Chrome 설치·연결 테스트·복구, JSON 저장 |
+| `docs/UI_SPEC.md` | 화면 요소, 상태, 오류 표현 |
+| `docs/SECURITY_SCOPE.md` | 인증·DRM 제외, 입력 검증 및 개인정보 보호 |
+| `docs/TEST_PLAN.md` | 자동 테스트와 실제 브라우저 검증 시나리오 |
+| `docs/PACKAGING.md` | 포터블 배포 및 Chrome 연결·해제 절차 |
+
+## 요구사항 충돌 시 우선순위
+
+`AGENTS.md`의 작업 규칙 → `docs/SECURITY_SCOPE.md`의 명시적 제외 → `docs/PRD.md`의 제품 요구사항 → 각 상세 설계 → `ROADMAP.md`의 실행 순서. 불일치가 발견되면 임의로 가정하지 말고 문서에 남기고 사용자에게 결정을 요청한다.
+
+## 구현상 주의
+
+- **감지 성공은 다운로드 성공이 아니다.** 로그인 필요, 만료 URL, DRM 및 브라우저 내부 주소는 실패할 수 있다.
+- 초기 단계에서 사이트별 전용 추출기, 브라우저 디버거 권한, 영상 재인코딩 등을 무작정 확대하지 않는다.
+- 공식 규격은 구현 시점에 확인한다: [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), [Chrome webRequest](https://developer.chrome.com/docs/extensions/reference/api/webRequest), [Tauri 2](https://v2.tauri.app/), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/documentation.html).
+
+## v1.2 Chrome 설치 방식
+
+제품 구현 시 포터블 EXE의 설정 창에서 [확장 프로그램 설치 안내]를 연다. 사용자는 `chrome://extensions`에서 개발자 모드를 켜고 배포 폴더의 `extension/`을 [압축해제된 확장 프로그램을 로드합니다]로 선택한다. 확장 ID를 설정 창에 입력한 뒤 EXE가 현재 사용자 HKCU에 Native Messaging 호스트를 등록한다. 확장 팝업에서 시작하는 왕복 연결 테스트를 통과해야 `연결됨`으로 표시한다.
+
+폴더를 이동하면 새 EXE에서 [연결 복구/재등록]을 실행하고, 확장 폴더도 이동했다면 새 위치를 다시 로드하고 ID를 확인한다. Chrome 웹스토어 등록·강제 설치·기업 정책 변경은 기본 배포에 포함하지 않는다. 상세 절차는 [설치 안내](docs/BROWSER_EXTENSION.md#8-설치-및-연결-절차-v12)와 [포터블 배포](docs/PACKAGING.md)를 따른다.
+
+이 ZIP은 기존 15개 Markdown 문서의 전체 개정본이다. EXE, 확장 소스, 다운로드 도구는 포함하지 않는다. 설계 버전 v1.2와 IPC `version: 1`, 설정 `schemaVersion: 1`은 서로 다른 버전이다.
