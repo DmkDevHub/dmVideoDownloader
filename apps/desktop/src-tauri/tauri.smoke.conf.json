@@ -1,0 +1,6 @@
+{
+  "build": { "beforeBuildCommand": "npm run build -- --mode smoke" },
+  "app": {
+    "windows": [{ "label": "main", "title": "Smoke test", "width": 1000, "height": 700, "visible": false }]
+  }
+}

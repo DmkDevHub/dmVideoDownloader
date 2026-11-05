@@ -45,3 +45,13 @@
 - R0-01의 완료 기준인 기존 상태·환경·보존 목록 기록은 충족한다. Windows 11 제품명 확정, Tauri 개발 의존성 준비, 실제 컴파일·창 실행은 남아 있다. R0 단계 전체는 미완료이다.
 
 다음 후보는 R0-02(최소 Tauri 2 + Vue 3 + TypeScript + Rust 실행 골격) 한 개이며, 사용자 지시 전에는 착수하지 않는다.
+
+## 2026-11-05 — 최초 개발 컴퓨터 / R0 구현 전 재확인
+
+- 작업 경로: `D:\workspace\dm_workspace\dmVideoDownloader`. 기존 문서와 소스를 보존하고 R0-02~04 순차 진행을 사용자에게 지시받았다.
+- `node --version`, `npm --version`, `rustc --version`, `cargo --version`, `rustup target list --installed`: 최초 조사와 동일. Chrome `156.0.8078.80`, Windows SDK `10.0.26100.0`, MSVC `14.44.35207` 재확인.
+- 일반 샌드박스에서 차단됐던 `Get-CimInstance Win32_OperatingSystem`을 권한 승인된 읽기 전용 실행으로 재확인: `Microsoft Windows 11 Pro`, `10.0.26300`, 64비트. 최초 조사 당시 제품명 미확정 사항 해소.
+- `npm install`: 프로젝트 로컬 의존성 설치 및 잠금 파일 생성 성공. Vue `3.5.44`, Vite `8.3.6`, TypeScript `5.9.x`, Tauri CLI/API `2.12.4`; Cargo 잠금 파일의 Tauri 런타임 `2.12.5`. 전역 Tauri CLI 설치 불필요.
+- `npm run check`, `npm run build:debug`: PASS. 실제 Windows MSVC 링크 및 WebView2 사용 앱 빌드 확인. Rust 라이브러리 이름에 `_lib`를 붙여 최초 빌드의 PDB 파일 이름 충돌 경고 해소.
+- `npm run smoke`: 숨김 네이티브 WebView에서 Vue 마운트, 프런트엔드→Rust 호출, 프로세스 종료 코드 0을 검사. 화면 클릭·입력 없음. 시각적 배치·사용자 조작 시나리오는 미검증.
+- TC-01~20은 기능 미구현으로 NOT RUN. R0 골격 검증에 직접 대응하는 기존 TC ID는 없음. 릴리스 패키징·영상 다운로드·Chrome 연결 검증은 이번 범위가 아님.

@@ -1,0 +1,10 @@
+:root {
+  font-family: "Malgun Gothic", sans-serif;
+  color: #20252d;
+  background: #f5f6f8;
+  font-synthesis: none;
+}
+body { margin: 0; }
+main { max-width: 800px; margin: 64px auto; padding: 24px; }
+h1 { font-size: 28px; }
+p { line-height: 1.7; }

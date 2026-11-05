@@ -3,7 +3,7 @@
 - 설계 버전: **v1.2** (2026-11-05)
 - 대상: Windows 11 개인용 브라우저 감지 기반 영상 다운로더
 - 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
-- 상태: **설계 확정 / 구현 시작 전** (작동하는 소스가 포함된 패키지가 아님)
+- 상태: **R0-02 최소 앱 골격 구현·내부 실행 검증 완료**. 영상 감지·다운로드 기능은 아직 구현되지 않았다.
 
 ## 한눈에 보는 요구사항
 
@@ -60,4 +60,21 @@
 
 폴더를 이동하면 새 EXE에서 [연결 복구/재등록]을 실행하고, 확장 폴더도 이동했다면 새 위치를 다시 로드하고 ID를 확인한다. Chrome 웹스토어 등록·강제 설치·기업 정책 변경은 기본 배포에 포함하지 않는다. 상세 절차는 [설치 안내](docs/BROWSER_EXTENSION.md#8-설치-및-연결-절차-v12)와 [포터블 배포](docs/PACKAGING.md)를 따른다.
 
-이 ZIP은 기존 15개 Markdown 문서의 전체 개정본이다. EXE, 확장 소스, 다운로드 도구는 포함하지 않는다. 설계 버전 v1.2와 IPC `version: 1`, 설정 `schemaVersion: 1`은 서로 다른 버전이다.
+최초 설계 ZIP은 15개 Markdown 문서로 구성되었다. 현재 저장소에는 단계별로 앱 소스를 추가한다. 다운로드 도구는 아직 동봉하지 않는다. 설계 버전 v1.2와 IPC `version: 1`, 설정 `schemaVersion: 1`은 서로 다른 버전이다.
+
+## 로컬 개발 및 내부 검증
+
+Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Build Tools/Windows SDK 및 WebView2가 필요하다. 처음 클론한 컴퓨터에서는 [환경 기록](docs/ENVIRONMENT.md)과 실제 도구 상태를 다시 확인한다. 프로젝트 설치는 루트에서 `npm ci`를 실행한다. npm 및 Cargo 잠금 파일을 함께 보존한다.
+
+| 명령 (프로젝트 루트) | 동작 |
+|---|---|
+| `npm run check` | Vue/TypeScript 타입 검사 |
+| `npm run build:frontend` | 타입 검사 및 Vue 번들 생성 |
+| `npm run build:debug` | 프런트엔드 및 Windows 디버그 EXE 빌드, 설치 패키지 없음 |
+| `npm run build` | 릴리스 EXE 빌드, 설치 패키지 없음 (배포 검증은 R7) |
+| `npm run smoke` | 테스트 전용 설정으로 디버그 빌드 후 숨겨진 WebView에서 Vue 마운트→Rust IPC→프로세스 정상 종료 확인. 화면 클릭·입력 없음 |
+| `npm run dev` | 사용자가 앱을 개발 모드로 실행할 때 사용 |
+
+일반 실행 파일은 `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe`이며 프런트엔드 산출물은 `apps/desktop/dist/`이다. smoke 명령은 같은 디버그 경로에 테스트 전용 실행 파일을 생성하므로 일반 실행 전 `npm run build:debug`로 다시 빌드한다. 테스트 IPC는 `smoke-test` Cargo feature와 smoke 프런트엔드 모드에만 포함된다. 숨겨진 창 검증은 시각적 레이아웃 확인을 대신하지 않는다.
+
+구현 시 참고한 공식 문서: [Tauri Windows 선행 조건](https://v2.tauri.app/start/prerequisites/), [Vite 프런트엔드 연결](https://v2.tauri.app/start/frontend/), [설정](https://v2.tauri.app/reference/config/), [테스트](https://v2.tauri.app/develop/tests/).

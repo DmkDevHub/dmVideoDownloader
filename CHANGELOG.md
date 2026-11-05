@@ -2,6 +2,14 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-05 — [R0-02] 최소 Windows 앱 실행 골격
+
+- 변경: `apps/desktop`에 Tauri 2 + Vue 3 + TypeScript + Rust 골격 구성. 루트 npm 워크스페이스, npm/Cargo 잠금 파일, 최소 CSP·권한 없는 설정 및 빌드 산출물 제외 규칙 추가. 영상 감지·다운로드·설정 기능은 미구현.
+- 자동 테스트: `npm run check`, `npm run build:debug`, `npm run smoke`, `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`, `git diff --check` PASS.
+- 요구사항 검증: Windows 11 Pro에서 숨겨진 실제 네이티브 WebView 창 생성→Vue 마운트→Rust 호출→정상 종료 확인. 화면 클릭·입력 없음. 테스트 IPC는 별도 feature/프런트엔드 모드로 한정. 직접 대응 TC 없음, TC-01~20 NOT RUN.
+- 문서: README 실행 명령, ENVIRONMENT 환경 재확인 결과 및 ROADMAP R0-02 완료 반영. CIM 읽기 조회로 기존 Windows 제품명 미확정 해소.
+- 남은 제한: 시각적 레이아웃·사용자 조작·릴리스 배포 미검증. 다음은 사용자 승인 범위의 R0-03을 순차 진행.
+
 ## 2026-11-05 — 새 컴퓨터의 R0 재확인 규칙 반영
 
 - R0 완료 표시와 관계없이 새 컴퓨터에서 최초 개발 전 환경·기존 빌드·내부 자동화 테스트를 재확인하도록 AGENTS, CODEX_START, README에 명시.

@@ -1,0 +1,16 @@
+{
+  "name": "dm-video-downloader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/desktop"],
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "dev": "npm run tauri --workspace @dm-video/desktop -- dev",
+    "build": "npm run tauri --workspace @dm-video/desktop -- build --no-bundle",
+    "build:debug": "npm run tauri --workspace @dm-video/desktop -- build --debug --no-bundle",
+    "build:frontend": "npm run build --workspace @dm-video/desktop",
+    "check": "npm run check --workspace @dm-video/desktop",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}
