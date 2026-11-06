@@ -1,10 +1,31 @@
 import { CandidateStore, domObservation, networkObservation, publicUrl } from './media';
-export function startBackground(api: typeof chrome): void {
+import { failure, sendCandidate } from './native';
+export function startBackground(api: typeof chrome): () => Promise<unknown> {
   const store = new CandidateStore();
+  let autoDetect = true;
+  let settingsSource: 'default' | 'last-confirmed' = 'default';
+  let cacheAvailable = true;
+  const pendingSelections = new Set<string>();
+  const readSettings = (value: unknown) => {
+    autoDetect = true; settingsSource = 'default';
+    if (value && typeof value === 'object' && typeof (value as Record<string, unknown>).browserAutoDetect === 'boolean') {
+      autoDetect = (value as { browserAutoDetect: boolean }).browserAutoDetect;
+      settingsSource = 'last-confirmed';
+    }
+    if (!autoDetect) store.clearCandidates();
+  };
+  const badges = async () => {
+    const tabs = await api.tabs.query({});
+    await Promise.all(tabs.filter(tab => tab.id !== undefined).map(tab => api.action.setBadgeText({ tabId: tab.id!, text: autoDetect && store.list(tab.id!).length ? String(store.list(tab.id!).length) : '' }).catch(() => undefined)));
+  };
   const hydrate = async () => {
+    await api.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    const settings = await api.storage.local.get('lastRuntimeSettings');
+    readSettings(settings.lastRuntimeSettings);
     await api.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
     const saved = await api.storage.session.get('candidateSession');
     store.restore(saved.candidateSession);
+    readSettings(settings.lastRuntimeSettings);
     for (const tabId of store.tabIds()) {
       try {
         const frames = await api.webNavigation.getAllFrames({ tabId });
@@ -13,12 +34,21 @@ export function startBackground(api: typeof chrome): void {
         for (const frame of frames ?? []) if (frame.frameId !== 0) store.navigate(tabId, {}, frame.documentId, frame.frameId);
       } catch { store.remove(tabId); }
     }
+    await badges();
   };
-  let queue: Promise<unknown> = hydrate().catch(() => undefined);
+  let queue: Promise<unknown> = hydrate().catch(() => { cacheAvailable = false; });
   const enqueue = (task: () => void | Promise<unknown>) => {
-    queue = queue.then(task).then(() => api.storage.session.set({ candidateSession: store.snapshot() })).catch(() => undefined);
+    queue = queue.then(task).then(async () => {
+      await badges();
+      try { await api.storage.session.set({ candidateSession: store.snapshot() }); cacheAvailable = true; }
+      catch { cacheAvailable = false; }
+      void api.runtime.sendMessage({ type: 'CANDIDATES_CHANGED' }).catch(() => undefined);
+    }).catch(() => { cacheAvailable = false; });
     return queue;
   };
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.lastRuntimeSettings) void enqueue(() => readSettings(changes.lastRuntimeSettings.newValue));
+  });
   api.webNavigation.onCommitted.addListener(details => {
     void enqueue(async () => {
       const tab = await api.tabs.get(details.tabId).catch(() => undefined);
@@ -38,7 +68,7 @@ export function startBackground(api: typeof chrome): void {
   api.webRequest.onResponseStarted.addListener(details => {
     const observation = networkObservation(details);
     if (!observation) return;
-    void enqueue(() => { if (store.accepts(details.tabId, details.frameId, details.documentId)) store.add(observation); });
+    void enqueue(() => { if (autoDetect && store.accepts(details.tabId, details.frameId, details.documentId)) store.add(observation); });
   }, { urls: ['http://*/*', 'https://*/*'] }, ['responseHeaders']);
   api.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== api.runtime.id) return;
@@ -46,14 +76,30 @@ export function startBackground(api: typeof chrome): void {
       (!sender.documentLifecycle || sender.documentLifecycle === 'active')) {
       const observation = domObservation(sender.tab.id, message);
       if (!observation) return;
-      void enqueue(() => { if (store.accepts(sender.tab!.id!, sender.frameId ?? 0, sender.documentId)) store.add(observation); });
+      void enqueue(() => { if (autoDetect && store.accepts(sender.tab!.id!, sender.frameId ?? 0, sender.documentId)) store.add(observation); });
+    }
+    if (message?.type === 'DOWNLOAD_SELECTED' && sender.url === api.runtime.getURL('popup.html')) {
+      const id: unknown = message.candidateId;
+      if (typeof id !== 'string' || id.length > 64 || !Number.isSafeInteger(message.tabId)) { respond(failure('INVALID_PAYLOAD')); return; }
+      if (pendingSelections.has(id)) { respond(failure('CANDIDATE_BUSY')); return; }
+      pendingSelections.add(id);
+      void queue.then(async () => {
+        const candidate = store.list(message.tabId).find(row => row.candidateId === id);
+        const frames = await api.webNavigation.getAllFrames({ tabId: message.tabId });
+        const root = frames?.find(frame => frame.frameId === 0);
+        if (!candidate || !root || root.documentId !== store.rootDocument(message.tabId) || publicUrl(root.url) !== candidate.pageUrl) return failure('INVALID_PAYLOAD');
+        return sendCandidate(api.runtime, candidate);
+      }).then(respond).catch(() => respond(failure('INVALID_PAYLOAD'))).finally(() => pendingSelections.delete(id));
+      return true;
     }
     if (message?.type === 'POPUP_STATE' && sender.url === api.runtime.getURL('popup.html')) {
       const selected = Number.isSafeInteger(message.tabId) && message.tabId >= 0
         ? api.tabs.get(message.tabId).then(tab => [tab]) : api.tabs.query({ active: true, currentWindow: true });
       void queue.then(() => selected).then(([tab]) => respond({ ready: true, tabId: tab?.id,
-        candidates: tab?.id === undefined ? [] : store.list(tab.id) })).catch(() => respond({ ready: true, candidates: [] }));
+        candidates: tab?.id === undefined ? [] : store.list(tab.id), autoDetect, settingsSource, cacheAvailable }))
+        .catch(() => respond({ ready: true, candidates: [], autoDetect, settingsSource, cacheAvailable }));
       return true;
     }
   });
+  return () => queue;
 }

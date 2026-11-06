@@ -143,3 +143,4 @@
 - R2-03 / TC-03 보완: 타입·단위 18개·빌드·headless Chrome PASS. 페이지에 video/source를 동적으로 추가하고 src/type을 바꾸어 실제 content script→워커 후보 확인. 동일 URL의 DOM/네트워크 ID 유지 병합, blob/민감 URL/잘못된 MIME 거부 단위 검사. 실제 재생/화면 확인 NOT RUN.
 - R2-04 / TC-04/05 감지 부분: 타입·단위 19개·빌드·headless Chrome PASS. HLS 응답 및 확장자 없는 DASH 응답 분류, HLS MIME 별칭/대소문자/파라미터·오류 HTML·쿼리 확장자 오인 거부 검사. 재생목록 분석·품질 선택·다운로드·병합/재생 NOT RUN.
 - R2-05 / TC-06: 타입·단위 24개·빌드·headless Chrome PASS. 실제 반복 MP4/추적 쿼리·chunk/segment/range 요청 후 후보 수 유지. 두 탭 분리·전체 페이지/SPA 이동·탭 종료·워커 강제 종료 후 세션 복구/후보 ID 유지 확인. 이전 root/iframe 문서 거부·상한·불량 세션 입력·민감 URL 제거 단위 검사. 원본 URL은 session에만 일시 보관하며 local/sync 저장소에 쓰지 않는다. 화면 확인/실제 재생 NOT RUN.
+- R2-06 / TC-06/09 관련: 타입·단위 32개·빌드·headless Chrome PASS. 現 탭 팝업 DOM/배지一致·URL 쿼리 미노출·확인값 off에 따른 후보/배지 정리 확인. 포트/컨트롤러 내부 테스트에서 감지/조회/위조 content 발신자는 Host 호출 0회, 명시 선택 1회, stale/중복 선택·일치하지 않는 ACK·버전·크기·raw 오류·15초 만료 거부. 서비스 워커는 ServiceWorker.stopWorker 및 stopped 이벤트로 실제 중단 확인 후 복구. 실제 Host/앱 왕복·다운로드·UI 클릭/시각 배치는 NOT RUN.

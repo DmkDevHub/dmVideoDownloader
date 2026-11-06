@@ -91,7 +91,11 @@ try {
   const tabId = await evaluate(workerSession, `(async () => (await chrome.tabs.query({url:${JSON.stringify(pageUrl)}}))[0].id)()`);
   const { targetId: popupTarget } = await send('Target.createTarget', { url: `chrome-extension://${extensionId}/popup.html` });
   const { sessionId: popupSession } = await send('Target.attachToTarget', { targetId: popupTarget, flatten: true });
-  await until(async () => (await evaluate(popupSession, 'document.querySelector("#status")?.textContent'))?.includes('감지 준비됨'), 'popup worker reply');
+  await until(async () => (await evaluate(popupSession, 'document.querySelector("#detection")?.textContent'))?.includes('자동 감지'), 'popup worker reply');
+  await evaluate(popupSession, `chrome.tabs.update(${tabId}, {active:true}).then(() => true)`);
+  await until(async () => await evaluate(popupSession, 'document.querySelectorAll("#candidates li").length') === 2, 'current-tab popup rows');
+  assert.equal(await evaluate(popupSession, `chrome.action.getBadgeText({tabId:${tabId}})`), '2');
+  assert.ok(!(await evaluate(popupSession, 'document.querySelector("#candidates").textContent')).includes('/sample.mp4'));
   const rows = await until(async () => {
     const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
     return state.candidates?.length >= 2 && state.candidates;
@@ -131,8 +135,13 @@ try {
   await until(async () => (await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${otherTabId}})`)).candidates.length === 1, 'second tab isolation');
   assert.equal((await stateForTab()).candidates.length, beforeRepeat.candidates.length);
   await send('Target.closeTarget', { targetId: otherTarget });
-  await send('Target.closeTarget', { targetId: worker.targetId });
-  await until(async () => !(await send('Target.getTargets')).targetInfos.some(t => t.targetId === worker.targetId), 'worker termination');
+  await send('ServiceWorker.enable', {}, pageSession);
+  const version = await until(() => events.filter(e => e.method === 'ServiceWorker.workerVersionUpdated')
+    .flatMap(e => e.params.versions).find(item => item.scriptURL === worker.url && item.runningStatus === 'running'), 'extension worker version');
+  await send('Target.detachFromTarget', { sessionId: workerSession });
+  await send('ServiceWorker.stopWorker', { versionId: version.versionId }, pageSession);
+  await until(() => events.filter(e => e.method === 'ServiceWorker.workerVersionUpdated')
+    .flatMap(e => e.params.versions).some(item => item.versionId === version.versionId && item.runningStatus === 'stopped'), 'worker termination');
   const restored = await stateForTab();
   assert.deepEqual(restored.candidates.map(r => r.candidateId), beforeRepeat.candidates.map(r => r.candidateId));
   await send('Page.navigate', { url: pageUrl.replace('/watch', '/replacement') }, pageSession);
@@ -143,6 +152,11 @@ try {
   await evaluate(pageSession, 'fetch("/sample.webm").then(() => true)');
   await until(async () => (await stateForTab()).candidates.length === 1, 'new page candidate');
   assert.ok((await stateForTab()).candidates[0].pageUrl.endsWith('/next'));
+  await evaluate(popupSession, 'chrome.storage.local.set({lastRuntimeSettings:{browserAutoDetect:false}}).then(() => true)');
+  await until(async () => (await stateForTab()).autoDetect === false && (await stateForTab()).candidates.length === 0, 'last-confirmed auto-detect off');
+  assert.equal(await evaluate(popupSession, `chrome.action.getBadgeText({tabId:${tabId}})`), '');
+  await evaluate(pageSession, 'fetch("/disabled.mp4").then(() => true)');
+  await pause(200); assert.equal((await stateForTab()).candidates.length, 0);
   await send('Target.closeTarget', { targetId });
   await until(async () => {
     const cache = await evaluate(popupSession, 'chrome.storage.session.get("candidateSession")');

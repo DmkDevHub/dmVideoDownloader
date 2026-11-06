@@ -117,6 +117,7 @@ export class CandidateStore {
   pageUrl(tabId: number): string | undefined { return this.tabs.get(tabId)?.pageUrl; }
   tabIds(): number[] { return Array.from(this.tabs.keys()); }
   remove(tabId: number): void { this.tabs.delete(tabId); }
+  clearCandidates(): void { for (const tab of this.tabs.values()) tab.rows = []; }
   add(observation: Observation): Candidate | null {
     const tab = this.tabs.get(observation.tabId);
     const mediaUrl = publicUrl(observation.mediaUrl);
@@ -168,5 +169,7 @@ export class CandidateStore {
   }
 }
 function cleanTitle(value?: string): string | undefined {
-  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 200) : undefined;
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/gu, '').replace(/https?:\/\/[^\s]+/giu, input => {
+    try { return new URL(input).hostname; } catch { return '영상 주소'; }
+  }).slice(0, 200) : undefined;
 }
