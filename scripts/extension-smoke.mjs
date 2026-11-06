@@ -18,7 +18,11 @@ async function until(fn, label) {
   while (Date.now() < end) { const result = await fn(); if (result) return result; await pause(100); }
   throw new Error(`Timed out: ${label}`);
 }
-const server = createServer((_req, res) => {
+const server = createServer((req, res) => {
+  if (req.url?.startsWith('/sample.mp4') || req.url?.startsWith('/sample.webm')) {
+    res.setHeader('Content-Type', req.url.startsWith('/sample.mp4') ? 'video/mp4' : 'video/webm');
+    res.end('metadata fixture, not a playable video'); return;
+  }
   res.setHeader('Content-Type', 'text/html');
   res.end('<!doctype html><title>Public fixture</title><h1>Extension process test</h1>');
 });
@@ -75,9 +79,17 @@ try {
   await until(async () => await evaluate(pageSession, 'globalThis.document?.title') === 'Public fixture', 'fixture page load');
   await until(() => events.find(e => e.sessionId === pageSession && e.method === 'Runtime.executionContextCreated'
     && e.params.context.origin === `chrome-extension://${extensionId}`), 'content script isolated context');
+  await evaluate(pageSession, 'Promise.all([fetch("/sample.mp4"), fetch("/sample.webm")]).then(() => true)');
+  const tabId = await evaluate(workerSession, `(async () => (await chrome.tabs.query({url:${JSON.stringify(pageUrl)}}))[0].id)()`);
   const { targetId: popupTarget } = await send('Target.createTarget', { url: `chrome-extension://${extensionId}/popup.html` });
   const { sessionId: popupSession } = await send('Target.attachToTarget', { targetId: popupTarget, flatten: true });
   await until(async () => (await evaluate(popupSession, 'document.querySelector("#status")?.textContent'))?.includes('감지 준비됨'), 'popup worker reply');
+  const rows = await until(async () => {
+    const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+    return state.candidates?.length >= 2 && state.candidates;
+  }, 'MP4/WebM request metadata');
+  assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
+  assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
   console.log('EXTENSION_SMOKE_PASS: MV3 worker, isolated content script, popup/runtime messaging; no UI input');
 } finally {
   if (socket?.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => undefined); socket.close(); }

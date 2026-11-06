@@ -139,3 +139,4 @@
 환경: Windows 11 Pro, Node 24.22.1 / Chrome for Testing 157.0.8103.38. 실행기는 `scripts/extension-smoke.mjs`; `DM_CHROME_BINARY` 지정 후 `npm run build:extension`, `npm run test:extension:chrome`. 임시 프로필과 테스트용 loopback HTTP fixture/호스트 매핑 사용. 화면 클릭·입력·사용자 Chrome 프로필·정책·레지스트리 변경 없음. CDP는 테스트 실행 컨텍스트/함수/DOM 상태 검사에만 사용하고 제품 확장은 debugger 권한을 갖지 않는다.
 
 - R2-01 / TC-16 일부: 실제 unpacked MV3 워커 로드, HTML 페이지의 격리 content script 컨텍스트, 팝업 로드와 워커 왕복 PASS. 타입 검사 및 단위 14개 PASS. 일반 Chrome 개발자 모드 수동 로드·시각적 배치 NOT RUN.
+- R2-02 / TC-03 메타데이터: `npm test` 17개 및 확장 타입/빌드 PASS. 실제 Chrome HTTP fixture의 MP4/WebM 응답을 Content-Type/확장자로 감지하고 올바른 탭·미분석 상태 조회 PASS. 206·비GET·403·배경 요청·인증 쿼리·정수/16진 loopback·IPv6/사설 IP·헤더 미보관 단위 검사. fixture 응답은 메타데이터 전용이며 실제 영상 재생은 NOT RUN.

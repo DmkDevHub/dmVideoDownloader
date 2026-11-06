@@ -2,6 +2,11 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-06 — [R2-02] MP4/WebM 네트워크 감지
+
+- 변경: 관찰 전용 webRequest/HTTP(S) 호스트 권한, 응답 시작 시 GET/2xx의 URL·Content-Type 허용 목록 투영, 탭별 미분석 후보. 로그인 내장 URL·인식 가능한 토큰/서명 쿼리와 내부 IP·위험 스킴 거부. 응답 헤더 원본은 보관/전달하지 않으며 요청 헤더를 읽지 않음.
+- 검증: `npm test` 17개 PASS, 확장 타입/빌드 및 headless Chrome의 MP4/WebM HTTP 응답→후보 조회 PASS. TC-03 감지 메타데이터 부분. 실제 재생·시각 확인은 NOT RUN. DNS/리다이렉트/하위 요청의 다운로드 경계는 R4에서 검증하며 확장은 URL을 재요청하지 않음.
+
 ## 2026-11-06 — [R2-01] MV3 확장 최소 실행
 
 - 변경: extension 워크스페이스·타입 검사·Vite 빌드, MV3 워커/content script/팝업 추가. Chrome 타입 패키지 버전 고정. 빌드 결과는 `extension/dist`. 화면 조작 없는 Chrome for Testing 프로세스/CDP 테스트 실행기 추가.
