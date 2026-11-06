@@ -43,3 +43,14 @@ test('HTML5 source projection and network evidence merge without changing candid
   expect(domObservation(3, { mediaUrl: 'https://example.org/a.mp4', mime: {} })).toBeNull();
   expect(domObservation(-1, source)).toBeNull();
 });
+test('HLS and DASH classify by playlist path or normalized MIME, never by query text', () => {
+  for (const mime of ['Application/Vnd.Apple.Mpegurl; charset=utf-8', 'application/x-mpegurl', 'audio/mpegurl', 'audio/x-mpegurl']) {
+    expect(classifyMedia('https://example.org/play', mime)).toBe('hls');
+  }
+  expect(classifyMedia('https://example.org/manifest', 'application/dash+xml')).toBe('dash');
+  expect(classifyMedia('https://example.org/MASTER.M3U8?v=1', 'application/octet-stream')).toBe('hls');
+  expect(classifyMedia('https://example.org/stream.MPD')).toBe('dash');
+  expect(classifyMedia('https://example.org/page?next=master.m3u8')).toBeNull();
+  expect(classifyMedia('https://example.org/master.m3u8', 'text/html')).toBeNull();
+  expect(domObservation(2, { mediaUrl: 'https://example.org/master.m3u8' })?.sourceType).toBe('hls');
+});

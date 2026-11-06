@@ -2,6 +2,11 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-06 — [R2-04] HLS/DASH 메타데이터 분류
+
+- 변경: m3u8/mpd 경로와 HLS MIME 별칭·DASH MIME 지원. MIME 파라미터/대소문자 정규화, 쿼리 문자열의 확장자 오인과 HTML 오류 응답 거부.
+- 검증: 타입 검사·단위 19개·확장 빌드·headless Chrome PASS. TC-04/05의 HLS 응답 및 확장자 없는 DASH 응답→후보 유형 확인. 재생목록 분석·저장/병합·재생은 후속 단계이며 NOT RUN.
+
 ## 2026-11-06 — [R2-03] HTML5 소스 관찰과 후보 병합
 
 - 변경: video currentSrc/src·하위 source, 동적 추가/속성 변경/미디어 이벤트 관찰. debounce 및 스캔 상한, BFCache pause/resume 처리. content script 발신자와 입력을 검증하고 동일 페이지/URL의 네트워크 후보와 ID 유지 병합. blob/data·민감 URL 제외.

@@ -41,12 +41,16 @@ export function publicUrl(value: unknown): string | null {
 
 export function classifyMedia(url: string, mime = ''): SourceType | null {
   const type = mime.split(';')[0].trim().toLowerCase();
+  if (['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'audio/mpegurl', 'audio/x-mpegurl'].includes(type)) return 'hls';
+  if (type === 'application/dash+xml') return 'dash';
   if (type === 'video/mp4') return 'mp4';
   if (type === 'video/webm') return 'webm';
   if (type && !type.startsWith('video/') && type !== 'application/octet-stream') return null;
   const path = new URL(url).pathname.toLowerCase();
   if (path.endsWith('.mp4')) return 'mp4';
   if (path.endsWith('.webm')) return 'webm';
+  if (path.endsWith('.m3u8')) return 'hls';
+  if (path.endsWith('.mpd')) return 'dash';
   return type.startsWith('video/') ? 'unknown' : null;
 }
 

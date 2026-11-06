@@ -19,6 +19,14 @@ async function until(fn, label) {
   throw new Error(`Timed out: ${label}`);
 }
 const server = createServer((req, res) => {
+  if (req.url === '/master.m3u8') {
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.end('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nvariant.m3u8\n'); return;
+  }
+  if (req.url === '/manifest') {
+    res.setHeader('Content-Type', 'application/dash+xml');
+    res.end('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"/>'); return;
+  }
   if (req.url?.startsWith('/sample.mp4') || req.url?.startsWith('/sample.webm')) {
     res.setHeader('Content-Type', req.url.startsWith('/sample.mp4') ? 'video/mp4' : 'video/webm');
     res.end('metadata fixture, not a playable video'); return;
@@ -90,6 +98,11 @@ try {
   }, 'MP4/WebM request metadata');
   assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
   assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
+  await evaluate(pageSession, 'Promise.all([fetch("/master.m3u8"), fetch("/manifest")]).then(() => true)');
+  await until(async () => {
+    const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+    return state.candidates?.some(r => r.sourceType === 'hls') && state.candidates?.some(r => r.sourceType === 'dash');
+  }, 'HLS path and DASH MIME detection');
   await evaluate(pageSession, `(() => {
     const video = document.createElement('video'); video.preload = 'none';
     const source = document.createElement('source'); source.src = '/dom-only.webm'; source.type = 'video/webm';

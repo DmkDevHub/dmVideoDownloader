@@ -42,7 +42,8 @@
   > 검증: 2026-11-06 / TC-03 메타데이터 부분 PASS. `npm test` 17개, 확장 타입/빌드 및 headless Chrome 실제 HTTP MP4/WebM 요청→탭별 후보 조회 PASS. GET/2xx·미디어 유형·Content-Type만 투영, 민감 URL/내부 주소/인증정보·오류 응답 거부. fixture는 메타데이터 전용이며 실제 영상 재생/시각 확인은 미검증. 요청/인증 헤더 접근·다운로드·Host 호출 없음.
 - [x] **R2-03** HTML5 video/source 관찰 및 네트워크 후보 병합. (완료: 후보 발견/동작 테스트)
   > 검증: 2026-11-06 / 타입 검사·단위 18개·확장 빌드·headless Chrome PASS. 실제 페이지에 동적 video/source 추가와 src/type 변경→후보 발견, DOM/네트워크 동일 URL 병합·후보 ID 유지·blob/민감 URL 거부 확인. 관찰 횟수 제한·pagehide/pageshow 처리. TC-03 보완 부분, 실제 재생/시각 확인은 미검증.
-- [ ] **R2-04** m3u8/mpd 탐지와 MIME 유형 판별. (완료: TC-04/05 감지 부분)
+- [x] **R2-04** m3u8/mpd 탐지와 MIME 유형 판별. (완료: TC-04/05 감지 부분)
+  > 검증: 2026-11-06 / TC-04/05 감지 부분 PASS. 타입·단위 19개·확장 빌드·headless Chrome PASS. 실제 HLS 경로/Content-Type 및 확장자 없는 DASH MIME 후보 확인, MIME 별칭/대소문자/파라미터·오류 HTML 거부 검사. 재생목록 분석·변형 선택·병합/재생은 R4~R6 미구현으로 NOT RUN.
 - [ ] **R2-05** 중복 제거·세그먼트 필터·탭 이동 시 상태 정리. (완료: TC-06)
 - [ ] **R2-06** 팝업의 현재 탭 영상 목록·배지·다운로드 선택 동작. (완료: 실제 브라우저 확인)
 
