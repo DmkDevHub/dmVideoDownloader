@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "dmVideoDownloader 영상 감지",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "description": "공개 영상 후보를 감지합니다. 다운로드는 사용자가 선택한 뒤에만 시도합니다.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "영상 후보 확인" },
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["content.js"], "run_at": "document_idle", "all_frames": true
+  }],
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

@@ -104,3 +104,8 @@
 - 최종 산출물: `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe` 일반 빌드 및 `apps/desktop/dist`. 의존성과 산출물은 Git 제외 상태를 유지한다.
 - 화면 클릭/입력·Chrome 실행·OS picker·영상 감지/다운로드·Native Messaging·릴리스/이동 검증은 NOT RUN. R2 이후 미구현 기능이나 시각적 인수 조건은 자동 테스트 성공으로 완료 처리하지 않는다. 사용자 설정·다운로드·호스트 등록·Chrome 프로필은 변경하지 않았다.
 - 최초 기록 커밋은 Git 작성자 미설정으로 실패했다. 이후 사용자 지정에 따라 이 저장소에만 `user.name=arakmin`, `user.email=arakmin@gmail.com`을 설정하여 기록 커밋을 진행한다. 전역 Git 설정 변경과 푸시는 하지 않는다.
+
+### R2 확장 검증 도구 추가
+
+- 일반 Chrome은 137 이후 명령줄 `--load-extension`을 지원하지 않아 공식 Chrome for Testing stable `157.0.8103.38` Windows x64를 사용자 도구 폴더에 별도 압축 해제했다. 출처: `https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json`의 stable win64 URL. 설치 위치 `%LOCALAPPDATA%\Programs\dm-video-tools\chrome-for-testing-157.0.8103.38\chrome-win64\chrome.exe`.
+- 사용자 Chrome 설치/프로필·기본 브라우저·정책은 보존. 확장 테스트는 `.test-output/extension-*` 임시 프로필에서 headless로 실행하며 클릭/입력은 하지 않는다. 실제 수동 설치 확인을 대체하지 않는다.

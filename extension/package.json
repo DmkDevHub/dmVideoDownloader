@@ -1,0 +1,14 @@
+{
+  "name": "@dm-video/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.7"
+  }
+}

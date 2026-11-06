@@ -6,7 +6,7 @@
 |---|---|---|
 | `apps/desktop/src` | Vue 3 화면 | 메인 화면·단일 설정 대화상자·Chrome 안내/상태 UI |
 | `apps/desktop/src-tauri` | Tauri 2/Rust 앱 코어 | Windows EXE, 폴더 검증·JSON 설정/복구·리소스 진단. 다운로드·Native Messaging은 미구현 |
-| `extension` | Chrome MV3 감지·팝업 | 경계 안내만 존재, manifest 및 빌드는 R2-01 |
+| `extension` | Chrome MV3 감지·팝업 | `npm run build:extension` → `extension/dist`, Chrome unpacked 로드 대상 |
 | `native-host` | 별도 Windows Native Messaging EXE | 경계 안내만 존재, 프로토콜/빌드는 R3 |
 | `shared` | 런타임에 의존하지 않는 공통 타입·검사 설정 | 공통 TS 설정을 데스크톱이 사용, 메시지 타입/스키마는 R3-01 |
 | `scripts` | 빌드·내부 검증 진입점 | 숨김 WebView 실행 검증 제공 |

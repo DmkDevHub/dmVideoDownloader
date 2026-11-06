@@ -36,7 +36,8 @@
 
 ## R2 — Chrome 자동 감지
 
-- [ ] **R2-01** MV3 manifest, 서비스 워커, content script, 팝업 최소 실행. (완료: Chrome 압축해제 확장 실행)
+- [x] **R2-01** MV3 manifest, 서비스 워커, content script, 팝업 최소 실행. (완료: Chrome 압축해제 확장 실행)
+  > 검증: 2026-11-06 / Chrome for Testing 157.0.8103.38 임시 프로필 headless unpacked 실행 PASS. 실제 MV3 워커·content script 격리 컨텍스트·팝업/워커 왕복 확인. `npm run check`, `npm test`(14개), `npm run build:extension`, `npm run test:extension:chrome` PASS. TC-16 로드/리소스 부분; 수동 설치·시각적 배치 미검증. 화면 클릭/입력·사용자 Chrome 프로필 변경 없음.
 - [ ] **R2-02** MP4/WebM 네트워크 메타데이터 감지. (완료: TC-03)
 - [ ] **R2-03** HTML5 video/source 관찰 및 네트워크 후보 병합. (완료: 후보 발견/동작 테스트)
 - [ ] **R2-04** m3u8/mpd 탐지와 MIME 유형 판별. (완료: TC-04/05 감지 부분)

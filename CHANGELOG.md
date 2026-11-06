@@ -2,6 +2,12 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-06 — [R2-01] MV3 확장 최소 실행
+
+- 변경: extension 워크스페이스·타입 검사·Vite 빌드, MV3 워커/content script/팝업 추가. Chrome 타입 패키지 버전 고정. 빌드 결과는 `extension/dist`. 화면 조작 없는 Chrome for Testing 프로세스/CDP 테스트 실행기 추가.
+- 검증: `npm run check`, `npm test`(14개), `npm run build:extension`, `npm run test:extension:chrome` PASS. 실제 워커·격리 content context·팝업 왕복. 초기 실행기의 Chrome 기본 워커 선택과 팝업 탭 발신자 판별 문제 수정 후 통과. TC-16 일부; 수동 설치·시각적 확인 미검증.
+- 사용자 Chrome 프로필·레지스트리·설정 변경 없음. 감지 및 Native Host는 후속 항목. 승인된 R2 전체를 항목별 순차 진행.
+
 ## 2026-11-06 — [R0 사전 재확인] 클론 환경 의존성 복원
 
 - 변경: 현재 작업 경로의 추적 파일 53개 존재와 Windows/Chrome/MSVC/SDK/WebView2/Rust를 재확인. npm이 없어 공식 체크섬을 검증한 Node `24.22.1` / npm `11.19.1`을 사용자 폴더에 설치하고 Node 및 기존 Rust 사용자 PATH를 보완. `npm.cmd ci`로 프로젝트 패키지 76개 복원. 소스와 npm/Cargo 잠금 파일 변경 없음.
