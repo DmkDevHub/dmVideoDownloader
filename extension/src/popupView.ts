@@ -3,6 +3,7 @@ import type { NativeResult } from './native';
 export interface PopupState {
   ready: boolean; tabId?: number; candidates: Candidate[]; autoDetect: boolean;
   settingsSource: 'default' | 'last-confirmed'; cacheAvailable: boolean;
+  lastVerifiedAt?: string;
 }
 export function candidateLabel(candidate: Candidate): { title: string; site: string; type: string } {
   const title = (candidate.pageTitle || '영상 후보').replace(/https?:\/\/[^\s]+/giu, value => {
@@ -15,6 +16,7 @@ export function renderCandidates(doc: Document, state: PopupState, select: (cand
   doc.querySelector('#count')!.textContent = `${state.candidates.length}개`;
   doc.querySelector('#detection')!.textContent = `자동 감지 ${state.autoDetect ? '켜짐' : '꺼짐'} · ${state.settingsSource === 'default' ? '기본값 사용' : '마지막 확인값 사용'} · 앱 설정 동기화 대기`;
   doc.querySelector('#cache')!.textContent = state.cacheAvailable ? '' : '세션 저장을 확인할 수 없습니다. 워커 재시작 시 후보가 사라질 수 있습니다.';
+  doc.querySelector('#last-success')!.textContent = state.lastVerifiedAt ? `마지막 성공: ${new Date(state.lastVerifiedAt).toLocaleString()} · 현재 연결은 확인 필요` : '마지막 성공 기록 없음 · 현재 연결 확인 필요';
   doc.querySelector('#empty')!.textContent = state.candidates.length ? '' : '후보가 없습니다. 영상을 재생하고 Chrome의 사이트 접근을 확인하세요. blob·보호 영상은 원본 주소 확인이 안 될 수 있습니다.';
   const list = doc.querySelector('#candidates')!;
   list.replaceChildren();
@@ -32,4 +34,8 @@ export function renderCandidates(doc: Document, state: PopupState, select: (cand
     });
     row.append(title, detail, button); list.append(row);
   }
+}
+export async function copyExtensionId(id: string, write: (text: string) => Promise<void>): Promise<boolean> {
+  if (!/^[a-p]{32}$/u.test(id)) return false;
+  try { await write(id); return true; } catch { return false; }
 }

@@ -22,7 +22,9 @@
 4. `npm run build:debug`로 앱 EXE를 만든다. 릴리스 컴파일은 `npm run build`이며 R7 배포 인수 검증을 대신하지 않는다.
 5. `npm run smoke`로 화면 조작 없이 숨겨진 실제 WebView·Vue·Rust 호출을 검증한다. 정상 실행용 EXE가 필요하면 이후 `npm run build:debug`를 실행한다.
 
-일괄 검증은 `npm run verify`로 타입 검사→Vitest 단위 테스트→네이티브 smoke→Rust 단위 테스트→일반 디버그 빌드 순서로 실행한다. 단계가 실패하면 후속 단계를 실행하지 않고 0이 아닌 종료 코드로 실패를 전파한다. JS 단위 테스트는 `npm test`, Rust 단위 테스트는 `npm run test:rust`이다. Rust 테스트의 Tauri 컨텍스트 생성에는 프런트엔드 산출물이 필요하므로 처음에는 `npm run build:frontend`를 먼저 실행한다. 테스트 파일이 없을 때 성공 처리하지 않는다.
+일괄 검증은 `npm run verify`로 데스크톱/확장 타입 검사→Vitest 단위 테스트→네이티브 smoke→Rust 단위 테스트→일반 디버그 빌드→확장 빌드 순서로 실행한다. 단계가 실패하면 후속 단계를 실행하지 않고 0이 아닌 종료 코드로 실패를 전파한다. JS 단위 테스트는 `npm test`, Rust 단위 테스트는 `npm run test:rust`이다. Rust 테스트의 Tauri 컨텍스트 생성에는 프런트엔드 산출물이 필요하므로 처음에는 `npm run build:frontend`를 먼저 실행한다. 테스트 파일이 없을 때 성공 처리하지 않는다.
+
+확장 실제 브라우저 내부 검증은 별도 `npm run test:extension:chrome`이다. Chrome for Testing 실행 파일을 `DM_CHROME_BINARY`로 지정하고 확장을 먼저 빌드한다. 일반 Chrome 사용자 프로필 대신 임시 headless 프로필과 로컬 HTTP fixture를 사용한다. `DM_MEDIA_FIXTURE`에 공개 테스트 MP4 절대경로를 지정하면 재생 시간 증가도 검사한다. 미지정 시 메타데이터만 검사하며 재생은 NOT RUN 출력한다. fixture는 사용자 영상 대신 공개/직접 만든 비인증 테스트 자산을 사용한다. 화면 클릭/입력·실제 Native Host 호출은 하지 않으며 수동 설치/시각적 인수와 Host 왕복을 대신하지 않는다.
 
 smoke 테스트 전용 feature에서만 `DM_SMOKE_ROOT`/`DM_SMOKE_PHASE`를 사용한다. 테스트는 별도 `.test-output/smoke-*`에서 네이티브 프로세스를 순차 실행하고 설정 파일과 백업을 검사한다. 일반 앱은 환경 변수로 설정 경로를 변경하지 않으며 EXE 폴더 기준으로만 `data/settings.json`을 사용한다. 테스트 산출물은 커밋하지 않는다.
 

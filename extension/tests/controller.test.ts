@@ -56,3 +56,21 @@ test('duplicate selection is rejected while ACK is pending, and cache errors are
   fixture.events.response.emit(fixture.response); await fixture.settled();
   expect(await fixture.request({ type: 'POPUP_STATE' })).toMatchObject({ cacheAvailable: false });
 });
+test('only popup starts diagnosis, concurrent test is rejected, and success is history rather than connected state', async () => {
+  const fixture = await setup(), port = fakePort();
+  fixture.api.runtime.connectNative.mockImplementation(() => port as never);
+  fixture.events.onMessage.emit({ type: 'CONNECTION_TEST' }, { id: fixture.sender.id, url: 'https://example.org/watch', tab: { id: 1 } }, () => undefined);
+  expect(fixture.api.runtime.connectNative).not.toHaveBeenCalled();
+  const result = fixture.request({ type: 'CONNECTION_TEST' });
+  expect(await fixture.request({ type: 'CONNECTION_TEST' })).toMatchObject({ code: 'CONNECTION_TEST_BUSY' });
+  await Promise.resolve(); await Promise.resolve();
+  const ping = port.postMessage.mock.calls[0][0];
+  port.onMessage.emit({ version: 1, type: 'PONG', requestId: ping.requestId, payload: { protocolVersion: 1, appReachable: true } });
+  expect(fixture.session.lastSuccessfulTest).toBeUndefined();
+  port.onMessage.emit({ version: 1, type: 'ACK', requestId: ping.requestId, payload: { accepted: true } });
+  expect(await result).toMatchObject({ ok: true });
+  const state = await fixture.request({ type: 'POPUP_STATE' });
+  expect(state.lastVerifiedAt).toBe(fixture.session.lastSuccessfulTest);
+  expect(state.connected).toBeUndefined();
+  expect(port.postMessage.mock.calls.some(([message]) => message.type === 'VIDEO_CANDIDATE')).toBe(false);
+});

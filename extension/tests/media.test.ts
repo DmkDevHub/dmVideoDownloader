@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { CandidateStore, classifyMedia, domObservation, networkObservation, publicUrl } from '../src/media';
+import { CandidateStore, classifyMedia, contentMessage, domObservation, networkObservation, publicUrl } from '../src/media';
 test('only public HTTP URLs without recognizable embedded credentials enter candidates', () => {
   for (const url of ['file:///a.mp4', 'blob:https://example.org/a', 'data:video/mp4;base64,AAA',
     'https://user:password@example.org/a.mp4', 'http://localhost/a', 'http://127.1/a',
@@ -54,4 +54,10 @@ test('HLS and DASH classify by playlist path or normalized MIME, never by query 
   expect(classifyMedia('https://example.org/page?next=master.m3u8')).toBeNull();
   expect(classifyMedia('https://example.org/master.m3u8', 'text/html')).toBeNull();
   expect(domObservation(2, { mediaUrl: 'https://example.org/master.m3u8' })?.sourceType).toBe('hls');
+});
+test('content boundary filters sensitive URLs before messaging and projects only canonical MIME', () => {
+  expect(contentMessage({ mediaUrl: 'https://example.org/a.mp4?token=secret' })).toBeNull();
+  expect(contentMessage({ mediaUrl: 'http://127.0.0.1/a.mp4' })).toBeNull();
+  expect(contentMessage({ mediaUrl: 'https://example.org/a', mime: 'video/mp4; metadata=DO_NOT_FORWARD' }))
+    .toEqual({ type: 'DOM_MEDIA', mediaUrl: 'https://example.org/a', mime: 'video/mp4' });
 });

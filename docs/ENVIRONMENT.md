@@ -109,3 +109,11 @@
 
 - 일반 Chrome은 137 이후 명령줄 `--load-extension`을 지원하지 않아 공식 Chrome for Testing stable `157.0.8103.38` Windows x64를 사용자 도구 폴더에 별도 압축 해제했다. 출처: `https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json`의 stable win64 URL. 설치 위치 `%LOCALAPPDATA%\Programs\dm-video-tools\chrome-for-testing-157.0.8103.38\chrome-win64\chrome.exe`.
 - 사용자 Chrome 설치/프로필·기본 브라우저·정책은 보존. 확장 테스트는 `.test-output/extension-*` 임시 프로필에서 headless로 실행하며 클릭/입력은 하지 않는다. 실제 수동 설치 확인을 대체하지 않는다.
+
+### R2-01~07 최종 검증
+
+- 확장 타입 패키지 `@types/chrome 0.3.7` 추가. 확장 워크스페이스의 TypeScript `5.9.3`, Vite `8.3.6`, Vitest `5.1.0`, Node 타입 `24.19.2`는 기존 데스크톱과 같은 버전으로 직접 명시했다. npm/Cargo 기존 버전 업그레이드 없음. npm 잠금 파일은 확장 워크스페이스 추가를 반영하고 Cargo 잠금 파일은 보존했다. npm audit 취약점 0개.
+- `npm.cmd run verify`: PASS. 데스크톱/확장 타입 검사, Vitest 39개(13+26), 실제 숨김 데스크톱 프로세스 4회, Rust 8개, 일반 Windows 디버그 EXE와 extension/dist 빌드. JS/Rust 단위 총 47개 통과. 화면 입력·사용자 설정/레지스트리 변경 없음.
+- `npm.cmd run test:extension:chrome`: PASS. `DM_MEDIA_FIXTURE`에 `D:\ai_workspace\dmVideoDownloader\.test-output\flower.mp4` 지정. 실제 unpacked MV3/격리 content script·MP4/WebM/HLS/DASH 감지·동적 소스 변경·현재 탭 팝업/배지/실제 ID·중복/세그먼트·전체/SPA 이동/종료·워커 stop/restart·off 확인. Native Host는 호출하지 않음. 진단/선택의 성공·실패 포트 상태 전이는 내부 어댑터에서 검증.
+- 실제 MP4 재생 보완: 공개 테스트 자산 `https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4`를 격리 파일로 내려받음(1,128,375바이트, SHA-256 `0cd83d944a6ca7822b4a8306cecc60a36e859b041f6702c6a1ad9ead78924451`). 로컬 fixture가 해당 바이트를 공급하고 HTMLVideoElement.play 및 currentTime 증가 PASS. 자산은 Git 제외. 테스트 실행기에 자동 다운로드 기능은 없음.
+- 미검증: WebM/HLS/DASH 실제 재생·분석/다운로드·병합, 일반 Chrome 수동 unpacked 설치·시각/클립보드 쓰기, 실제 Native Host/EXE 왕복·등록·앱 옵션 교환, 포터블 배포. R2 이후 개발은 자동 진행하지 않는다. TC별 범위는 TEST_PLAN 9절.

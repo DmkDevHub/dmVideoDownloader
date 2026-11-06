@@ -16,6 +16,6 @@
     "build:extension": "npm run build --workspace @dm-video/extension",
     "test:extension:chrome": "node scripts/extension-smoke.mjs",
     "test:rust": "cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib",
-    "verify": "npm run check && npm test && npm run smoke && npm run test:rust && npm run build:debug"
+    "verify": "npm run check && npm test && npm run smoke && npm run test:rust && npm run build:debug && npm run build:extension"
   }
 }

@@ -77,6 +77,13 @@ export function domObservation(tabId: number, message: unknown): Observation | n
   const sourceType = classifyMedia(mediaUrl, typeof input.mime === 'string' ? input.mime : '');
   return sourceType ? { tabId, mediaUrl, sourceType } : null;
 }
+export function contentMessage(source: unknown): { type: 'DOM_MEDIA'; mediaUrl: string; mime: string } | null {
+  const observation = domObservation(0, source);
+  if (!observation) return null;
+  const mime: Record<SourceType, string> = { mp4: 'video/mp4', webm: 'video/webm',
+    hls: 'application/vnd.apple.mpegurl', dash: 'application/dash+xml', unknown: 'video/unknown' };
+  return { type: 'DOM_MEDIA', mediaUrl: observation.mediaUrl, mime: mime[observation.sourceType] };
+}
 export function networkObservation(details: {
   tabId: number; url: string; method: string; statusCode: number; type: string;
   responseHeaders?: { name: string; value?: string }[];

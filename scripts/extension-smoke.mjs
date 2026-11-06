@@ -18,6 +18,7 @@ async function until(fn, label) {
   while (Date.now() < end) { const result = await fn(); if (result) return result; await pause(100); }
   throw new Error(`Timed out: ${label}`);
 }
+const playableMp4 = process.env.DM_MEDIA_FIXTURE ? readFileSync(process.env.DM_MEDIA_FIXTURE) : undefined;
 const server = createServer((req, res) => {
   if (req.url === '/master.m3u8') {
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
@@ -29,6 +30,9 @@ const server = createServer((req, res) => {
   }
   if (/\.(?:mp4|webm)(?:\?|$)/u.test(req.url ?? '')) {
     res.setHeader('Content-Type', req.url.includes('.mp4') ? 'video/mp4' : 'video/webm');
+    if (req.url.startsWith('/sample.mp4') && playableMp4) {
+      res.setHeader('Content-Length', playableMp4.length); res.end(playableMp4); return;
+    }
     res.end('metadata fixture, not a playable video'); return;
   }
   res.setHeader('Content-Type', 'text/html');
@@ -92,6 +96,9 @@ try {
   const { targetId: popupTarget } = await send('Target.createTarget', { url: `chrome-extension://${extensionId}/popup.html` });
   const { sessionId: popupSession } = await send('Target.attachToTarget', { targetId: popupTarget, flatten: true });
   await until(async () => (await evaluate(popupSession, 'document.querySelector("#detection")?.textContent'))?.includes('자동 감지'), 'popup worker reply');
+  assert.equal(await evaluate(popupSession, 'document.querySelector("#extension-id").textContent'), extensionId);
+  assert.equal(await evaluate(popupSession, 'document.querySelector("#test-connection").disabled'), false);
+  assert.ok((await evaluate(popupSession, 'document.querySelector("#last-success").textContent')).includes('현재 연결 확인 필요'));
   await evaluate(popupSession, `chrome.tabs.update(${tabId}, {active:true}).then(() => true)`);
   await until(async () => await evaluate(popupSession, 'document.querySelectorAll("#candidates li").length') === 2, 'current-tab popup rows');
   assert.equal(await evaluate(popupSession, `chrome.action.getBadgeText({tabId:${tabId}})`), '2');
@@ -102,6 +109,12 @@ try {
   }, 'MP4/WebM request metadata');
   assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
   assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
+  if (playableMp4) {
+    await evaluate(pageSession, `(() => { const video = document.createElement('video');
+      video.id = 'playback-probe'; video.muted = true; video.src = '/sample.mp4';
+      document.body.append(video); return video.play().then(() => true); })()`);
+    await until(async () => await evaluate(pageSession, 'document.querySelector("#playback-probe").currentTime > 0'), 'actual MP4 playback');
+  }
   await evaluate(pageSession, 'Promise.all([fetch("/master.m3u8"), fetch("/manifest")]).then(() => true)');
   await until(async () => {
     const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
@@ -162,7 +175,7 @@ try {
     const cache = await evaluate(popupSession, 'chrome.storage.session.get("candidateSession")');
     return !cache.candidateSession.tabs.some(tab => tab.tabId === tabId);
   }, 'closed tab session cleanup');
-  console.log('EXTENSION_SMOKE_PASS: MV3 worker, isolated content script, popup/runtime messaging; no UI input');
+  console.log(`EXTENSION_SMOKE_PASS: MV3, network/DOM/playlists, tab/session lifecycle, popup ID/badge; MP4 playback ${playableMp4 ? 'PASS' : 'NOT RUN (set DM_MEDIA_FIXTURE)'}; no UI input or Native Host invocation`);
 } finally {
   if (socket?.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => undefined); socket.close(); }
   if (browser.exitCode === null) browser.kill();

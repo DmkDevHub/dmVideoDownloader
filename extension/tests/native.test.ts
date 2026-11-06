@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { HOST_NAME, sendCandidate } from '../src/native';
+import { failure, HOST_NAME, sendCandidate, testConnection } from '../src/native';
 import { CandidateStore } from '../src/media';
 import { fakePort } from './helpers';
 function candidate() {
@@ -43,4 +43,51 @@ test('disconnect and timeout are bounded, and credential URLs never invoke a nat
   const forbidden = { ...candidate(), mediaUrl: 'https://example.org/a.mp4?token=secret' };
   connectNative.mockClear(); expect(await sendCandidate({ connectNative }, forbidden)).toMatchObject({ code: 'URL_NOT_ALLOWED' });
   expect(connectNative).not.toHaveBeenCalled();
+});
+test('connection test uses one port and one fresh ID for PING/PONG/result/ACK; no candidate is sent', async () => {
+  const port = fakePort(), connectNative = vi.fn(() => port as unknown as chrome.runtime.Port);
+  const result = testConnection({ connectNative });
+  const ping = port.postMessage.mock.calls[0][0];
+  expect(ping).toMatchObject({ version: 1, type: 'PING', payload: { purpose: 'connection_test' } });
+  port.onMessage.emit({ version: 1, type: 'PONG', requestId: ping.requestId, payload: { protocolVersion: 1, appReachable: true } });
+  expect(port.postMessage.mock.calls[1][0]).toEqual({ version: 1, type: 'CONNECTION_TEST_RESULT', requestId: ping.requestId, payload: { success: true } });
+  port.onMessage.emit({ version: 1, type: 'ACK', requestId: ping.requestId, payload: { accepted: true } });
+  expect(await result).toMatchObject({ ok: true, code: 'ACK' });
+  expect((await result).verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+  expect(connectNative).toHaveBeenCalledTimes(1); expect(port.disconnect).toHaveBeenCalledTimes(1);
+  expect(port.postMessage.mock.calls.some(([message]) => message.type === 'VIDEO_CANDIDATE')).toBe(false);
+  const nextPort = fakePort(), next = testConnection({ connectNative: () => nextPort as unknown as chrome.runtime.Port });
+  expect(nextPort.postMessage.mock.calls[0][0].requestId).not.toBe(ping.requestId);
+  nextPort.onDisconnect.emit(); await next;
+});
+test('diagnostic rejects ACK before PONG, wrong ID, app-unreachable and protocol mismatch', async () => {
+  for (const scenario of ['early-ack', 'wrong-id', 'unreachable', 'protocol']) {
+    const port = fakePort(), result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port });
+    const ping = port.postMessage.mock.calls[0][0];
+    port.onMessage.emit({ version: 1, type: scenario === 'early-ack' ? 'ACK' : 'PONG',
+      requestId: scenario === 'wrong-id' ? 'stale' : ping.requestId,
+      payload: { accepted: true, protocolVersion: scenario === 'protocol' ? 2 : 1, appReachable: scenario !== 'unreachable' } });
+    expect(await result).toMatchObject({ ok: false });
+    expect(port.postMessage).toHaveBeenCalledTimes(1);
+  }
+});
+test('PONG alone never completes diagnosis, total timeout is 30s, and late ACK cannot revive it', async () => {
+  vi.useFakeTimers();
+  const port = fakePort(), result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port });
+  const ping = port.postMessage.mock.calls[0][0];
+  port.onMessage.emit({ version: 1, type: 'PONG', requestId: ping.requestId, payload: { protocolVersion: 1, appReachable: true } });
+  await vi.advanceTimersByTimeAsync(29_999); expect(port.disconnect).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(await result).toMatchObject({ ok: false, code: 'CONNECTION_TEST_TIMEOUT' });
+  port.onMessage.emit({ version: 1, type: 'ACK', requestId: ping.requestId, payload: { accepted: true } });
+  expect(await result).toMatchObject({ ok: false });
+});
+test('diagnostic error codes cannot select prototype properties, and size limit counts UTF-8 bytes', async () => {
+  expect(failure('__proto__')).toMatchObject({ ok: false, code: 'INVALID_PAYLOAD' });
+  expect(typeof failure('constructor').safeMessage).toBe('string');
+  const port = fakePort(), result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port });
+  const ping = port.postMessage.mock.calls[0][0];
+  port.onMessage.emit({ version: 1, type: 'PONG', requestId: ping.requestId,
+    payload: { protocolVersion: 1, appReachable: true, unexpected: '가'.repeat(30_000) } });
+  expect(await result).toMatchObject({ ok: false, code: 'INVALID_PAYLOAD' });
 });
