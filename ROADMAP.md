@@ -7,6 +7,8 @@
 
 ## R0 — 프로젝트 기반
 
+> 현재 환경 사전 재확인: 2026-11-06 / 클론 개발 환경 A / `D:\ai_workspace\dmVideoDownloader`. 추적 파일 53개 보존, 누락 npm 및 프로젝트 의존성 설치, 기존 Rust 사용자 PATH 보완. `npm.cmd run verify` PASS(Vitest 13개·숨김 실제 앱 4회·Rust 8개·일반 디버그 빌드), Rust fmt PASS, 잠금 파일 변경 없음. [환경별 기록](docs/ENVIRONMENT.md#2026-11-06--클론-개발-환경-a--r0-사전-재확인). 기존 완료 체크 유지. 화면·Chrome·다운로드·Native Messaging은 미검증이며 R2 개발 미착수.
+
 - [x] **R0-01** 기존 프로젝트·환경·파일 조사: Windows, Node, Rust, Tauri, Chrome 및 기존 소스 상태를 확인하고 보존할 파일 목록 기록. (완료: 조사 결과 문서화)
   > 검증: 2026-11-05 / [환경 조사 결과](docs/ENVIRONMENT.md). 기존 설계 문서 15개와 소스 부재 자동 검사 PASS, 도구 버전 실행 확인. 직접 대응 TC 없음; TC-01~20 NOT RUN(기능 미구현). 초기 조사 당시 제한: Windows 제품명 확정 보류(CIM 접근 불가), Tauri CLI 없음, 실제 빌드·앱 실행 미검증. 이후 R0-02에서 Windows 제품명·로컬 CLI·앱 빌드/실행 확인.
 - [x] **R0-02** 최소 Tauri 2 + Vue 3 + TypeScript + Rust 실행 골격 구성. (완료: Windows 창 실행)

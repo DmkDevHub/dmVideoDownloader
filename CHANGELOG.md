@@ -2,6 +2,14 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-06 — [R0 사전 재확인] 클론 환경 의존성 복원
+
+- 변경: 현재 작업 경로의 추적 파일 53개 존재와 Windows/Chrome/MSVC/SDK/WebView2/Rust를 재확인. npm이 없어 공식 체크섬을 검증한 Node `24.22.1` / npm `11.19.1`을 사용자 폴더에 설치하고 Node 및 기존 Rust 사용자 PATH를 보완. `npm.cmd ci`로 프로젝트 패키지 76개 복원. 소스와 npm/Cargo 잠금 파일 변경 없음.
+- 자동 테스트: `npm.cmd run verify` PASS(타입 검사·Vitest 13개·숨김 실제 앱 4회·Rust 8개·일반 디버그 빌드). Rust fmt PASS. 현재 경로에서 설정 저장/재시작 복원·손상 백업/복구·미래 버전 보존과 실제 WebView/Rust IPC 확인.
+- 문서: ENVIRONMENT에 별도 환경 기록 추가, ROADMAP R0에 사전 재확인 근거 추가. 기존 체크·기록 보존. 화면/Chrome·실제 다운로드·Native Messaging·릴리스 검증은 NOT RUN. yt-dlp/FFmpeg는 현재 코드의 실행 의존성이 아니므로 R4/R7 범위로 유지.
+- 다음 후보: R2-01 한 개. 이번에는 개발 착수하지 않음. 로컬 기록 커밋만 생성하며 푸시 없음.
+  - 최초 커밋 실패 원인인 작성자 미설정은 사용자 지정 이름/이메일을 저장소 로컬에 설정하여 해소. 전역 Git 설정 변경 없음.
+
 ## 2026-11-05 — [R1-06] 동일 설정창의 Chrome 설치·연결 UI
 
 - 변경: BrowserConnection.vue/browserConnection.ts에 수동 unpacked 단계 안내, 관리 주소 복사, ID 입력, 폴더 이동/ID 변경 안내, 등록/테스트/복구/해제 버튼 및 확인 필요/마지막 성공 구분 구성. Rust browser.rs는 EXE 기준 배포 리소스·표준 Chrome 경로를 진단하며 폴더/Chrome 열기는 사용자 버튼에서만 시도.

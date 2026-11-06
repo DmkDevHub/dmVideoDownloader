@@ -71,3 +71,36 @@
 - 최종 `npm run verify` PASS: Vitest 13개, Rust 8개, 실제 숨김 앱 프로세스 4회 및 일반 디버그 빌드. `cargo fmt -- --check`, Clippy `--all-targets -- -D warnings`, `git diff --check` PASS.
 - 격리된 테스트 폴더에서 한글 저장 경로/화질/자동 감지 옵션 저장과 실제 프로세스 재시작 복원, 손상 백업·복구·미래 스키마 보존, 단일 설정창 모델/실제 마운트/취소, 리소스 진단을 확인했다. 자세한 TC별 범위는 TEST_PLAN 8절 참조.
 - 실제 화면 조작·OS picker·Chrome/탐색기 실행은 하지 않았다. 사용자 설정·다운로드 폴더와 호스트 등록도 변경하지 않았다. 실제 Native Messaging과 다운로드는 후속 단계이며 현재 검증 성공으로 대체하지 않는다.
+
+## 2026-11-06 — 클론 개발 환경 A / R0 사전 재확인
+
+- 작업 경로: `D:\ai_workspace\dmVideoDownloader`. 최초 개발 컴퓨터 기록과 구분하여 현재 환경을 재확인한다. R0/R1 완료 체크와 기존 소스·설정은 보존하며 R2 개발은 착수하지 않는다.
+- `git ls-files`와 `Test-Path -LiteralPath` 비교: 추적 파일 53개 모두 존재. `node_modules`, 프런트엔드 `dist`, Rust `target`은 클론에 포함하지 않는 생성물로 최초에는 없음. 사용자 `data/settings.json`도 없음. 확장 manifest·Native Host·다운로드 바이너리는 후속 단계에서 구현/동봉하며 누락 소스로 재생성하지 않는다.
+
+| 항목 | 실제 확인 결과 |
+|---|---|
+| Windows / PowerShell | `Get-CimInstance Win32_OperatingSystem`: Windows 11 Pro x64 `10.0.26300`; PowerShell `7.6.9` |
+| Node.js / npm | 최초 Codex 런타임 Node `24.22.1`만 PATH에 있고 npm 없음. 공식 Windows x64 ZIP으로 사용자 도구 폴더에 Node `24.22.1` / npm `11.19.1` 설치 |
+| Rust / Cargo | 기존 `%USERPROFILE%\.cargo\bin`에 설치되어 있으나 PATH 누락. 절대경로 실행으로 Rust `1.99.1 (58cf8f9c3 2026-10-13)`, Cargo `1.99.1 (5f94df478 2026-08-27)` 확인; 사용자 PATH에 추가 |
+| Rust 툴체인 / 타깃 | `rustup show active-toolchain`: `stable-x86_64-pc-windows-msvc`; 설치 타깃 `x86_64-pc-windows-msvc` |
+| Chrome | 표준 Program Files 경로 `chrome.exe`, ProductVersion `156.0.8078.81`; 실행·프로필 접근 없음 |
+| MSVC / Visual Studio | `vswhere` C++ 도구 조회: Build Tools 2022 `17.14.37824.6` / MSVC `14.44.35207`, Community 2026 `18.11.12328.437` / MSVC `14.51.36231`; 설치 완료·재부팅 불필요 |
+| Windows SDK | `Windows Kits\10\Lib\10.0.26100.0` 존재 |
+| WebView2 | HKLM EdgeUpdate Clients 읽기: `156.0.4314.58` |
+| Tauri / 프로젝트 패키지 | `npm.cmd ci`: 76개 설치, audit 78개·취약점 0개. 로컬 `tauri-cli 2.12.4`; 전역 CLI 설치 불필요. npm/Cargo 잠금 파일 변경 없음 |
+| yt-dlp / FFmpeg | PATH에 없음. 현재 R1 앱·검증에서 호출하지 않으며 존재/호출 진단은 R4-01, 배포 동봉은 R7-01 범위이므로 이번 사전 점검에서 설치하지 않음 |
+
+### 설치 출처 및 PATH
+
+- 공식 배포 `https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip`을 임시 폴더에 내려받아 같은 공식 경로의 `SHASUMS256.txt`와 SHA-256을 비교한 뒤 압축 해제. 일치 값: `d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5`.
+- 설치 위치: `%LOCALAPPDATA%\Programs\dm-video-tools\node-v24.22.1-win-x64`. 기존 Node/Rust와 시스템 PATH는 보존하고 사용자 PATH에 이 폴더 및 `%USERPROFILE%\.cargo\bin`을 추가했다. 기존 Codex/터미널 프로세스는 PATH를 새로 읽지 않으므로 검증 명령에서는 프로세스 PATH를 명시적으로 보완했다. 이후 새 터미널 또는 앱 재시작 시 사용자 PATH가 적용된다.
+- 프로젝트 의존성은 기존 `package-lock.json`의 `npm.cmd ci` 및 Cargo 잠금 파일 기준 빌드로 복원한다. 공식 Tauri 선행 조건 참고: `https://v2.tauri.app/start/prerequisites/`.
+
+### 현재 환경의 자동 검증 결과
+
+- `npm.cmd run verify`: PASS(종료 코드 0). Vue/TypeScript 검사 → Vitest 4개 파일·13개 테스트 → 실제 숨김 WebView 앱 4회 → Rust `--locked` 단위 테스트 8개 → 일반 디버그 빌드 순서로 통과했다. MSVC 링크와 WebView2 실제 구동을 확인했다.
+- smoke의 `write`, `restart`, `corrupt`, `future` 모두 `SMOKE_PASS` 및 종료 코드 0. 현재 경로의 격리된 `.test-output/smoke-*`에서 한글 폴더·설정 저장/프로세스 재시작 복원, 손상 원본 백업·복구, 미래 버전 원본 보존, 단일 설정창 모델/마운트와 Rust IPC를 검증했다. TC-01/14 내부 통합 및 TC-02/15/16/17 기존 구현 부분만 재확인했으며 TC별 제한은 TEST_PLAN 8절과 동일하다.
+- `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check`: PASS. `git diff --exit-code -- package-lock.json apps/desktop/src-tauri/Cargo.lock`: PASS(잠금 파일 보존).
+- 최종 산출물: `apps/desktop/src-tauri/target/debug/dm-video-desktop.exe` 일반 빌드 및 `apps/desktop/dist`. 의존성과 산출물은 Git 제외 상태를 유지한다.
+- 화면 클릭/입력·Chrome 실행·OS picker·영상 감지/다운로드·Native Messaging·릴리스/이동 검증은 NOT RUN. R2 이후 미구현 기능이나 시각적 인수 조건은 자동 테스트 성공으로 완료 처리하지 않는다. 사용자 설정·다운로드·호스트 등록·Chrome 프로필은 변경하지 않았다.
+- 최초 기록 커밋은 Git 작성자 미설정으로 실패했다. 이후 사용자 지정에 따라 이 저장소에만 `user.name=arakmin`, `user.email=arakmin@gmail.com`을 설정하여 기록 커밋을 진행한다. 전역 Git 설정 변경과 푸시는 하지 않는다.
