@@ -40,6 +40,7 @@ export function publicUrl(value: unknown): string | null {
 }
 
 export function classifyMedia(url: string, mime = ''): SourceType | null {
+  if (isSegment(url, mime)) return null;
   const type = mime.split(';')[0].trim().toLowerCase();
   if (['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'audio/mpegurl', 'audio/x-mpegurl'].includes(type)) return 'hls';
   if (type === 'application/dash+xml') return 'dash';
@@ -55,6 +56,19 @@ export function classifyMedia(url: string, mime = ''): SourceType | null {
 }
 
 export interface Observation { tabId: number; mediaUrl: string; sourceType: SourceType }
+export function isSegment(url: string, mime = ''): boolean {
+  const parsed = new URL(url);
+  if (/\.(?:ts|m4s|m4a|aac|mp3|vtt|key)$/iu.test(parsed.pathname) || mime.split(';')[0].trim().toLowerCase() === 'video/mp2t') return true;
+  if (/(?:^|[\/_.-])(?:seg(?:ment)?s?|chunks?|frag(?:ment)?s?|init)(?:[\/_.-]?\d|[\/_.-]|$)/iu.test(parsed.pathname)) return true;
+  return Array.from(parsed.searchParams.keys()).some(key => /^(?:range|bytestart|byteend|sq|seg(?:ment)?|fragment|chunk)$/iu.test(key));
+}
+function mediaIdentity(value: string): string {
+  const url = new URL(value);
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (/^(?:utm_.+|fbclid|gclid)$/iu.test(key)) url.searchParams.delete(key);
+  }
+  url.searchParams.sort(); return url.href;
+}
 export function domObservation(tabId: number, message: unknown): Observation | null {
   if (!Number.isSafeInteger(tabId) || tabId < 0 || !message || typeof message !== 'object') return null;
   const input = message as Record<string, unknown>;
@@ -79,24 +93,80 @@ export function networkObservation(details: {
 }
 
 export class CandidateStore {
-  private tabs = new Map<number, Candidate[]>();
-  add(observation: Observation, page: { url?: string; title?: string }): Candidate | null {
+  private tabs = new Map<number, { pageUrl: string; pageTitle?: string; documentId: string; frames: Record<string, string>; rows: Candidate[] }>();
+  static readonly perTabLimit = 30;
+  static readonly totalLimit = 200;
+  static readonly tabLimit = 20;
+  navigate(tabId: number, page: { url?: string; title?: string }, documentId: string, frameId = 0): void {
     const pageUrl = publicUrl(page.url);
-    if (!pageUrl) return null;
-    const rows = this.tabs.get(observation.tabId) ?? [];
-    const existing = rows.find(row => row.pageUrl === pageUrl && row.mediaUrl === observation.mediaUrl);
+    if (!Number.isSafeInteger(tabId) || tabId < 0 || typeof documentId !== 'string' || !documentId || documentId.length > 128) return;
+    if (frameId !== 0) {
+      const tab = this.tabs.get(tabId);
+      if (tab && Number.isSafeInteger(frameId) && frameId > 0 && Object.keys(tab.frames).length < 100) tab.frames[frameId] = documentId;
+      return;
+    }
+    this.remove(tabId);
+    if (!pageUrl) return;
+    this.tabs.set(tabId, { pageUrl, pageTitle: cleanTitle(page.title), documentId, frames: { 0: documentId }, rows: [] });
+    while (this.tabs.size > CandidateStore.tabLimit) this.tabs.delete(this.tabs.keys().next().value!);
+  }
+  accepts(tabId: number, frameId: number, documentId?: string): boolean {
+    return !!documentId && this.tabs.get(tabId)?.frames[frameId] === documentId;
+  }
+  rootDocument(tabId: number): string | undefined { return this.tabs.get(tabId)?.documentId; }
+  pageUrl(tabId: number): string | undefined { return this.tabs.get(tabId)?.pageUrl; }
+  tabIds(): number[] { return Array.from(this.tabs.keys()); }
+  remove(tabId: number): void { this.tabs.delete(tabId); }
+  add(observation: Observation): Candidate | null {
+    const tab = this.tabs.get(observation.tabId);
+    const mediaUrl = publicUrl(observation.mediaUrl);
+    if (!tab || !mediaUrl || isSegment(mediaUrl)) return null;
+    const rows = tab.rows;
+    const identity = mediaIdentity(mediaUrl);
+    const existing = rows.find(row => mediaIdentity(row.mediaUrl) === identity);
     if (existing) {
       if (existing.sourceType === 'unknown') existing.sourceType = observation.sourceType;
       return existing;
     }
+    if (rows.length >= CandidateStore.perTabLimit || Array.from(this.tabs.values()).reduce((n, entry) => n + entry.rows.length, 0) >= CandidateStore.totalLimit) return null;
     const candidate: Candidate = {
-      candidateId: crypto.randomUUID(), tabId: observation.tabId, pageUrl,
-      pageTitle: page.title?.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 200),
-      mediaUrl: observation.mediaUrl, sourceType: observation.sourceType,
+      candidateId: crypto.randomUUID(), tabId: observation.tabId, pageUrl: tab.pageUrl,
+      pageTitle: tab.pageTitle,
+      mediaUrl, sourceType: observation.sourceType,
       detectedAt: new Date().toISOString(), status: 'detected',
     };
-    rows.push(candidate); this.tabs.set(observation.tabId, rows);
+    rows.push(candidate);
     return candidate;
   }
-  list(tabId: number): Candidate[] { return this.tabs.get(tabId) ?? []; }
+  list(tabId: number): Candidate[] { return (this.tabs.get(tabId)?.rows ?? []).map(row => ({ ...row })); }
+  snapshot(): unknown {
+    return { schemaVersion: 1, tabs: Array.from(this.tabs, ([tabId, state]) => ({ tabId, ...state })) };
+  }
+  restore(snapshot: unknown): void {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    const data = snapshot as Record<string, unknown>;
+    if (data.schemaVersion !== 1 || !Array.isArray(data.tabs)) return;
+    for (const entry of data.tabs.slice(0, CandidateStore.tabLimit)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const state = entry as Record<string, unknown>;
+      if (!Number.isSafeInteger(state.tabId) || typeof state.documentId !== 'string' || !Array.isArray(state.rows)) continue;
+      const tabId = state.tabId as number;
+      this.navigate(tabId, { url: typeof state.pageUrl === 'string' ? state.pageUrl : '', title: typeof state.pageTitle === 'string' ? state.pageTitle : undefined }, state.documentId);
+      // Frame document IDs are re-read from Chrome during hydration; only root survives here.
+      for (const row of state.rows.slice(0, CandidateStore.perTabLimit)) {
+        if (!row || typeof row !== 'object') continue;
+        const item = row as Record<string, unknown>;
+        if (typeof item.candidateId !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/iu.test(item.candidateId) ||
+          typeof item.mediaUrl !== 'string' || typeof item.sourceType !== 'string' ||
+          !['mp4', 'webm', 'hls', 'dash', 'unknown'].includes(item.sourceType) ||
+          typeof item.detectedAt !== 'string' || !Number.isFinite(Date.parse(item.detectedAt)) ||
+          item.status !== 'detected' || item.tabId !== tabId || item.pageUrl !== state.pageUrl) continue;
+        const candidate = this.add({ tabId, mediaUrl: item.mediaUrl, sourceType: item.sourceType as SourceType });
+        if (candidate) { candidate.candidateId = item.candidateId; candidate.detectedAt = item.detectedAt; }
+      }
+    }
+  }
+}
+function cleanTitle(value?: string): string | undefined {
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 200) : undefined;
 }

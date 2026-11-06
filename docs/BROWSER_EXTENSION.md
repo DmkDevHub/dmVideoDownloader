@@ -110,3 +110,12 @@ R1-06, R2-07, R3-04~09, R7-02~05 / TC-09/12/16~20을 따른다. 이 문서는 �
 - [Chrome 공식 Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
 
 공식 규격 확인일: 2026-11-05. 설치 버튼·ID 수동 확인·복구 UI는 본 제품의 설계 결정이다.
+
+## 11. R2 구현 결정 (2026-11-06)
+
+- 개발 unpacked 로드는 `npm run build:extension`의 **`extension/dist/`**를 선택한다. 포터블 배포 시에는 이 내용 전체를 배포 폴더 `extension/`에 복사한다(R7). TypeScript 소스 폴더 자체를 로드하지 않는다.
+- `webRequest.onResponseStarted`는 관찰 전용이며 추가 옵션은 `responseHeaders`만 사용한다. Content-Type만 즉시 투영하고 헤더 원본은 보관하지 않는다. `extraHeaders`·요청 헤더·Cookie API는 사용하지 않는다.
+- `webNavigation`은 root/iframe 문서 ID와 이동 정리를 위해 사용한다. `tabs`/`debugger`/`downloads` 권한은 없다. HTTP(S) 사이트 접근은 자동 감지에 필요하며 Chrome에서 사이트별 제한 가능하다.
+- 후보는 trusted-context `storage.session`에만 저장한다. 루트/프레임 문서 ID와 현재 URL을 대조해 복구하고 이동·종료 때 지운다. 최대 20탭/탭당 30개/전체 200개. 알려진 세그먼트는 보수적으로 제외하며 불명확한 분할 MP4/광고의 완벽한 판별을 보장하지 않는다.
+- 설정 동기화 정책: 감지는 기본 켜짐이며 앱의 마지막 확인값이 있으면 비밀값 없는 자동 감지 옵션만 `storage.local`에 유지한다. 앱 연결이 없으면 마지막 확인값/기본값을 사용하고 팝업에 동기화 대기임을 표시한다. 감지를 위해 Native Host나 앱을 자동 실행하지 않는다. 실제 앱 설정 교환과 왕복 검증은 R3이며 R2의 로컬 상태 검증으로 대체하지 않는다.
+- 확장은 후보 URL을 재요청하지 않는다. URL의 위험 스킴·인식 가능한 인증정보·내부 IP를 거부하지만 DNS/리다이렉트/다운로드 하위 요청 검증은 엔진 R4에서 별도 수행해야 한다.

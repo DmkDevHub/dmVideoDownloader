@@ -27,8 +27,8 @@ const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/dash+xml');
     res.end('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"/>'); return;
   }
-  if (req.url?.startsWith('/sample.mp4') || req.url?.startsWith('/sample.webm')) {
-    res.setHeader('Content-Type', req.url.startsWith('/sample.mp4') ? 'video/mp4' : 'video/webm');
+  if (/\.(?:mp4|webm)(?:\?|$)/u.test(req.url ?? '')) {
+    res.setHeader('Content-Type', req.url.includes('.mp4') ? 'video/mp4' : 'video/webm');
     res.end('metadata fixture, not a playable video'); return;
   }
   res.setHeader('Content-Type', 'text/html');
@@ -117,6 +117,37 @@ try {
     const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
     return state.candidates?.some(r => r.mediaUrl.endsWith('/changed.mp4'));
   }, 'HTML5 source attribute change');
+  const stateForTab = () => evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+  const beforeRepeat = await stateForTab();
+  await evaluate(pageSession, 'Promise.all([fetch("/sample.mp4?utm_source=repeat"), fetch("/chunk-1.mp4"), fetch("/segment2.mp4"), fetch("/sample.mp4?range=0-99")]).then(() => true)');
+  await pause(300);
+  assert.equal((await stateForTab()).candidates.length, beforeRepeat.candidates.length);
+  const otherUrl = pageUrl.replace('/watch', '/other');
+  const { targetId: otherTarget } = await send('Target.createTarget', { url: otherUrl });
+  const { sessionId: otherSession } = await send('Target.attachToTarget', { targetId: otherTarget, flatten: true });
+  await until(async () => (await evaluate(otherSession, 'globalThis.document?.readyState')) === 'complete', 'second tab load');
+  await evaluate(otherSession, 'fetch("/other.webm").then(() => true)');
+  const otherTabId = await evaluate(popupSession, `(async () => (await chrome.tabs.query({url:${JSON.stringify(otherUrl)}}))[0].id)()`);
+  await until(async () => (await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${otherTabId}})`)).candidates.length === 1, 'second tab isolation');
+  assert.equal((await stateForTab()).candidates.length, beforeRepeat.candidates.length);
+  await send('Target.closeTarget', { targetId: otherTarget });
+  await send('Target.closeTarget', { targetId: worker.targetId });
+  await until(async () => !(await send('Target.getTargets')).targetInfos.some(t => t.targetId === worker.targetId), 'worker termination');
+  const restored = await stateForTab();
+  assert.deepEqual(restored.candidates.map(r => r.candidateId), beforeRepeat.candidates.map(r => r.candidateId));
+  await send('Page.navigate', { url: pageUrl.replace('/watch', '/replacement') }, pageSession);
+  await until(async () => await evaluate(pageSession, 'globalThis.document?.readyState === "complete" && location.pathname === "/replacement"'), 'full navigation');
+  await until(async () => (await stateForTab()).candidates.length === 0, 'full navigation cleanup');
+  await evaluate(pageSession, 'history.pushState({}, "", "/next"); true');
+  await until(async () => (await stateForTab()).candidates.length === 0, 'SPA navigation cleanup');
+  await evaluate(pageSession, 'fetch("/sample.webm").then(() => true)');
+  await until(async () => (await stateForTab()).candidates.length === 1, 'new page candidate');
+  assert.ok((await stateForTab()).candidates[0].pageUrl.endsWith('/next'));
+  await send('Target.closeTarget', { targetId });
+  await until(async () => {
+    const cache = await evaluate(popupSession, 'chrome.storage.session.get("candidateSession")');
+    return !cache.candidateSession.tabs.some(tab => tab.tabId === tabId);
+  }, 'closed tab session cleanup');
   console.log('EXTENSION_SMOKE_PASS: MV3 worker, isolated content script, popup/runtime messaging; no UI input');
 } finally {
   if (socket?.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => undefined); socket.close(); }

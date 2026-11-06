@@ -25,7 +25,7 @@ test('network projection retains only media metadata, ignoring non-GET, errors a
   for (const change of [{ method: 'POST' }, { tabId: -1 }, { statusCode: 403 }, { type: 'script' }]) {
     expect(networkObservation({ ...details, ...change })).toBeNull();
   }
-  const store = new CandidateStore(); store.add(networkObservation(details)!, { url: 'https://example.org/watch', title: 'Sample' });
+  const store = new CandidateStore(); store.navigate(4, { url: 'https://example.org/watch', title: 'Sample' }, 'doc-4'); store.add(networkObservation(details)!);
   expect(store.list(4)[0]).toMatchObject({ tabId: 4, status: 'detected', sourceType: 'mp4' });
   expect(JSON.stringify(store.list(4))).not.toContain('DO_NOT_RETAIN');
   expect(store.list(9)).toEqual([]);
@@ -33,9 +33,10 @@ test('network projection retains only media metadata, ignoring non-GET, errors a
 test('HTML5 source projection and network evidence merge without changing candidate identity', () => {
   const store = new CandidateStore();
   const page = { url: 'https://example.org/watch' };
+  store.navigate(3, page, 'doc-3');
   const source = domObservation(3, { mediaUrl: 'https://cdn.example.org/a.webm', mime: 'video/webm', unexpected: 'discard' })!;
-  const first = store.add(source, page)!;
-  const second = store.add({ ...source, sourceType: 'webm' }, page)!;
+  const first = store.add(source)!;
+  const second = store.add({ ...source, sourceType: 'webm' })!;
   expect(second.candidateId).toBe(first.candidateId);
   expect(store.list(3)).toHaveLength(1);
   expect(domObservation(3, { mediaUrl: 'blob:https://example.org/id' })).toBeNull();
