@@ -51,6 +51,14 @@ export function classifyMedia(url: string, mime = ''): SourceType | null {
 }
 
 export interface Observation { tabId: number; mediaUrl: string; sourceType: SourceType }
+export function domObservation(tabId: number, message: unknown): Observation | null {
+  if (!Number.isSafeInteger(tabId) || tabId < 0 || !message || typeof message !== 'object') return null;
+  const input = message as Record<string, unknown>;
+  const mediaUrl = publicUrl(input.mediaUrl);
+  if (!mediaUrl || (input.mime !== undefined && (typeof input.mime !== 'string' || input.mime.length > 200))) return null;
+  const sourceType = classifyMedia(mediaUrl, typeof input.mime === 'string' ? input.mime : '');
+  return sourceType ? { tabId, mediaUrl, sourceType } : null;
+}
 export function networkObservation(details: {
   tabId: number; url: string; method: string; statusCode: number; type: string;
   responseHeaders?: { name: string; value?: string }[];
@@ -72,6 +80,11 @@ export class CandidateStore {
     const pageUrl = publicUrl(page.url);
     if (!pageUrl) return null;
     const rows = this.tabs.get(observation.tabId) ?? [];
+    const existing = rows.find(row => row.pageUrl === pageUrl && row.mediaUrl === observation.mediaUrl);
+    if (existing) {
+      if (existing.sourceType === 'unknown') existing.sourceType = observation.sourceType;
+      return existing;
+    }
     const candidate: Candidate = {
       candidateId: crypto.randomUUID(), tabId: observation.tabId, pageUrl,
       pageTitle: page.title?.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 200),

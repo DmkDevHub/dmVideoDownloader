@@ -2,6 +2,11 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-06 — [R2-03] HTML5 소스 관찰과 후보 병합
+
+- 변경: video currentSrc/src·하위 source, 동적 추가/속성 변경/미디어 이벤트 관찰. debounce 및 스캔 상한, BFCache pause/resume 처리. content script 발신자와 입력을 검증하고 동일 페이지/URL의 네트워크 후보와 ID 유지 병합. blob/data·민감 URL 제외.
+- 검증: `npm run check`, `npm test` 18개, 확장 빌드 및 headless Chrome PASS. 실제 동적 source 추가·주소/유형 변경→후보 발견. TC-03 감지 보완 부분이며 실제 영상 재생/시각 확인은 미검증.
+
 ## 2026-11-06 — [R2-02] MP4/WebM 네트워크 감지
 
 - 변경: 관찰 전용 webRequest/HTTP(S) 호스트 권한, 응답 시작 시 GET/2xx의 URL·Content-Type 허용 목록 투영, 탭별 미분석 후보. 로그인 내장 URL·인식 가능한 토큰/서명 쿼리와 내부 IP·위험 스킴 거부. 응답 헤더 원본은 보관/전달하지 않으며 요청 헤더를 읽지 않음.

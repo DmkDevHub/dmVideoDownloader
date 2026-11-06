@@ -40,7 +40,8 @@
   > 검증: 2026-11-06 / Chrome for Testing 157.0.8103.38 임시 프로필 headless unpacked 실행 PASS. 실제 MV3 워커·content script 격리 컨텍스트·팝업/워커 왕복 확인. `npm run check`, `npm test`(14개), `npm run build:extension`, `npm run test:extension:chrome` PASS. TC-16 로드/리소스 부분; 수동 설치·시각적 배치 미검증. 화면 클릭/입력·사용자 Chrome 프로필 변경 없음.
 - [x] **R2-02** MP4/WebM 네트워크 메타데이터 감지. (완료: TC-03)
   > 검증: 2026-11-06 / TC-03 메타데이터 부분 PASS. `npm test` 17개, 확장 타입/빌드 및 headless Chrome 실제 HTTP MP4/WebM 요청→탭별 후보 조회 PASS. GET/2xx·미디어 유형·Content-Type만 투영, 민감 URL/내부 주소/인증정보·오류 응답 거부. fixture는 메타데이터 전용이며 실제 영상 재생/시각 확인은 미검증. 요청/인증 헤더 접근·다운로드·Host 호출 없음.
-- [ ] **R2-03** HTML5 video/source 관찰 및 네트워크 후보 병합. (완료: 후보 발견/동작 테스트)
+- [x] **R2-03** HTML5 video/source 관찰 및 네트워크 후보 병합. (완료: 후보 발견/동작 테스트)
+  > 검증: 2026-11-06 / 타입 검사·단위 18개·확장 빌드·headless Chrome PASS. 실제 페이지에 동적 video/source 추가와 src/type 변경→후보 발견, DOM/네트워크 동일 URL 병합·후보 ID 유지·blob/민감 URL 거부 확인. 관찰 횟수 제한·pagehide/pageshow 처리. TC-03 보완 부분, 실제 재생/시각 확인은 미검증.
 - [ ] **R2-04** m3u8/mpd 탐지와 MIME 유형 판별. (완료: TC-04/05 감지 부분)
 - [ ] **R2-05** 중복 제거·세그먼트 필터·탭 이동 시 상태 정리. (완료: TC-06)
 - [ ] **R2-06** 팝업의 현재 탭 영상 목록·배지·다운로드 선택 동작. (완료: 실제 브라우저 확인)

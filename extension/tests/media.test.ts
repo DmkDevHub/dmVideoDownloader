@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { CandidateStore, classifyMedia, networkObservation, publicUrl } from '../src/media';
+import { CandidateStore, classifyMedia, domObservation, networkObservation, publicUrl } from '../src/media';
 test('only public HTTP URLs without recognizable embedded credentials enter candidates', () => {
   for (const url of ['file:///a.mp4', 'blob:https://example.org/a', 'data:video/mp4;base64,AAA',
     'https://user:password@example.org/a.mp4', 'http://localhost/a', 'http://127.1/a',
@@ -29,4 +29,17 @@ test('network projection retains only media metadata, ignoring non-GET, errors a
   expect(store.list(4)[0]).toMatchObject({ tabId: 4, status: 'detected', sourceType: 'mp4' });
   expect(JSON.stringify(store.list(4))).not.toContain('DO_NOT_RETAIN');
   expect(store.list(9)).toEqual([]);
+});
+test('HTML5 source projection and network evidence merge without changing candidate identity', () => {
+  const store = new CandidateStore();
+  const page = { url: 'https://example.org/watch' };
+  const source = domObservation(3, { mediaUrl: 'https://cdn.example.org/a.webm', mime: 'video/webm', unexpected: 'discard' })!;
+  const first = store.add(source, page)!;
+  const second = store.add({ ...source, sourceType: 'webm' }, page)!;
+  expect(second.candidateId).toBe(first.candidateId);
+  expect(store.list(3)).toHaveLength(1);
+  expect(domObservation(3, { mediaUrl: 'blob:https://example.org/id' })).toBeNull();
+  expect(domObservation(3, { mediaUrl: 'https://example.org/a.mp4?token=x' })).toBeNull();
+  expect(domObservation(3, { mediaUrl: 'https://example.org/a.mp4', mime: {} })).toBeNull();
+  expect(domObservation(-1, source)).toBeNull();
 });

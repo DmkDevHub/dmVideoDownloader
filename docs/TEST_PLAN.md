@@ -140,3 +140,4 @@
 
 - R2-01 / TC-16 일부: 실제 unpacked MV3 워커 로드, HTML 페이지의 격리 content script 컨텍스트, 팝업 로드와 워커 왕복 PASS. 타입 검사 및 단위 14개 PASS. 일반 Chrome 개발자 모드 수동 로드·시각적 배치 NOT RUN.
 - R2-02 / TC-03 메타데이터: `npm test` 17개 및 확장 타입/빌드 PASS. 실제 Chrome HTTP fixture의 MP4/WebM 응답을 Content-Type/확장자로 감지하고 올바른 탭·미분석 상태 조회 PASS. 206·비GET·403·배경 요청·인증 쿼리·정수/16진 loopback·IPv6/사설 IP·헤더 미보관 단위 검사. fixture 응답은 메타데이터 전용이며 실제 영상 재생은 NOT RUN.
+- R2-03 / TC-03 보완: 타입·단위 18개·빌드·headless Chrome PASS. 페이지에 video/source를 동적으로 추가하고 src/type을 바꾸어 실제 content script→워커 후보 확인. 동일 URL의 DOM/네트워크 ID 유지 병합, blob/민감 URL/잘못된 MIME 거부 단위 검사. 실제 재생/화면 확인 NOT RUN.

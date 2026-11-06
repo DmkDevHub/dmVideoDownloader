@@ -90,6 +90,20 @@ try {
   }, 'MP4/WebM request metadata');
   assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
   assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
+  await evaluate(pageSession, `(() => {
+    const video = document.createElement('video'); video.preload = 'none';
+    const source = document.createElement('source'); source.src = '/dom-only.webm'; source.type = 'video/webm';
+    video.append(source); document.body.append(video); return true;
+  })()`);
+  await until(async () => {
+    const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+    return state.candidates?.some(r => r.mediaUrl.endsWith('/dom-only.webm'));
+  }, 'dynamic HTML5 source observation');
+  await evaluate(pageSession, `(() => { const source = document.querySelector('source'); source.src = '/changed.mp4'; source.type = 'video/mp4'; return true; })()`);
+  await until(async () => {
+    const state = await evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+    return state.candidates?.some(r => r.mediaUrl.endsWith('/changed.mp4'));
+  }, 'HTML5 source attribute change');
   console.log('EXTENSION_SMOKE_PASS: MV3 worker, isolated content script, popup/runtime messaging; no UI input');
 } finally {
   if (socket?.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => undefined); socket.close(); }
