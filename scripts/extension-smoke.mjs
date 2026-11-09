@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
+import { runChromeNativeSmoke } from './chrome-native-smoke.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = process.env.DM_CHROME_BINARY ?? resolve(process.env.LOCALAPPDATA ?? '',
   'Programs/dm-video-tools/chrome-for-testing-157.0.8103.38/chrome-win64/chrome.exe');
@@ -108,6 +109,12 @@ try {
     return state.candidates?.length >= 2 && state.candidates;
   }, 'MP4/WebM request metadata');
   assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
+  if (process.env.DM_NATIVE_APP || process.env.DM_NATIVE_HOST) {
+    const candidateId = rows.find(row => row.sourceType === 'mp4').candidateId;
+    const command = { type: 'DOWNLOAD_SELECTED', tabId, candidateId };
+    await runChromeNativeSmoke({ root, extensionId, candidateId,
+      requestSelection: () => evaluate(popupSession, `chrome.runtime.sendMessage(${JSON.stringify(command)})`) });
+  }
   assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
   if (playableMp4) {
     await evaluate(pageSession, `(() => { const video = document.createElement('video');
@@ -175,7 +182,7 @@ try {
     const cache = await evaluate(popupSession, 'chrome.storage.session.get("candidateSession")');
     return !cache.candidateSession.tabs.some(tab => tab.tabId === tabId);
   }, 'closed tab session cleanup');
-  console.log(`EXTENSION_SMOKE_PASS: MV3, network/DOM/playlists, tab/session lifecycle, popup ID/badge; MP4 playback ${playableMp4 ? 'PASS' : 'NOT RUN (set DM_MEDIA_FIXTURE)'}; no UI input or Native Host invocation`);
+  console.log(`EXTENSION_SMOKE_PASS: MV3, network/DOM/playlists, tab/session lifecycle, popup ID/badge; MP4 playback ${playableMp4 ? 'PASS' : 'NOT RUN (set DM_MEDIA_FIXTURE)'}; no UI input`);
 } finally {
   if (socket?.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => undefined); socket.close(); }
   if (browser.exitCode === null) browser.kill();

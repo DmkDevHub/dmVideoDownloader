@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, nextTick } from 'vue';
+import { onMounted, onUnmounted, nextTick } from 'vue';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
@@ -12,6 +12,17 @@ const startupError = ref('');
 const snapshotState = ref<SettingsSnapshot>();
 const runtime = ref<BrowserRuntime>();
 const actionMessage = ref('');
+const candidates = ref<{ id: string; title: string; sourceType: string }[]>([]);
+let candidateTimer: ReturnType<typeof setInterval> | undefined;
+let refreshingCandidates = false;
+async function refreshCandidates() {
+  if (refreshingCandidates) return;
+  refreshingCandidates = true;
+  try { candidates.value = await invoke('received_candidates'); }
+  catch { /* Retain the last known inbox on a transient IPC error. */ }
+  finally { refreshingCandidates = false; }
+}
+onUnmounted(() => clearInterval(candidateTimer));
 
 async function browserRegistration(action: 'register' | 'repair' | 'unregister') {
   const current = editor.value;
@@ -80,10 +91,21 @@ onMounted(async () => {
         const recovered = await invoke<SettingsSnapshot>('recover_settings');
         smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
         applySnapshot(recovered);
-      } else if (phase === 'bridge') {
+      } else if (phase === 'bridge' || phase === 'chrome-bridge') {
+        if (phase === 'chrome-bridge') {
+          await invoke('browser_register', { extensionId: snapshot.settings.browserExtensionId });
+          runtime.value = await invoke<BrowserRuntime>('browser_runtime');
+          if (runtime.value.registrationCode !== 'REGISTERED') throw new Error('REGISTRATION_FAILED');
+        }
         for (let attempt = 0; attempt < 100 && !smokePassed; attempt++) {
-          smokePassed = await invoke<boolean>('smoke_bridge_received');
+          await refreshCandidates();
+          await nextTick();
+          smokePassed = await invoke<boolean>('smoke_bridge_received') && document.querySelectorAll('[data-received-candidate]').length === 1;
           if (!smokePassed) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (phase === 'chrome-bridge') {
+          await invoke('browser_unregister');
+          runtime.value = await invoke<BrowserRuntime>('browser_runtime');
         }
       } else if (phase === 'future') {
         smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
@@ -99,8 +121,10 @@ onMounted(async () => {
       editor.value?.cancel();
       await nextTick();
       smokePassed = smokePassed && document.querySelector('dialog') === null;
-    } else if (snapshot.notice) {
-      editor.value?.open();
+    } else {
+      if (snapshot.notice) editor.value?.open();
+      void refreshCandidates();
+      candidateTimer = setInterval(refreshCandidates, 750);
     }
   } catch (error) {
     startupError.value = settingsError(error);
@@ -128,7 +152,10 @@ onMounted(async () => {
     </section>
     <section class="panel" aria-labelledby="candidates-heading">
       <h2 id="candidates-heading">감지된 영상</h2>
-      <div class="table-scroll"><table><thead><tr><th>제목 / 사이트</th><th>종류</th><th>화질</th><th>분석 상태</th><th>작업</th></tr></thead><tbody><tr><td colspan="5" class="empty">아직 감지된 영상이 없습니다. Chrome 감지 기능은 준비 중입니다.</td></tr></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>제목</th><th>종류</th><th>화질</th><th>분석 상태</th></tr></thead><tbody>
+        <tr v-if="!candidates.length"><td colspan="4" class="empty">Chrome 확장 팝업에서 선택한 영상이 여기에 표시됩니다.</td></tr>
+        <tr v-for="candidate in candidates" :key="candidate.id" data-received-candidate><td>{{ candidate.title }}</td><td>{{ candidate.sourceType.toUpperCase() }}</td><td>미확인</td><td>후보 수신 · 분석 대기</td></tr>
+      </tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="jobs-heading">
       <h2 id="jobs-heading">다운로드</h2>

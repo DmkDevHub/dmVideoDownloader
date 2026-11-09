@@ -64,7 +64,7 @@ export function sendCandidate(runtime: Runtime, candidate: Candidate): Promise<N
   return nativeTransaction(runtime, { version: 1, type: 'VIDEO_CANDIDATE', requestId,
     payload: { candidateId, tabId, pageUrl, ...(pageTitle ? { pageTitle } : {}), mediaUrl, sourceType, detectedAt } }, 15_000,
   message => message.type === 'ACK' && message.payload.accepted === true && message.payload.candidateId === candidateId
-    ? { ok: true, code: 'ACK', safeMessage: '앱이 후보를 수신했습니다. 다운로드 진행 상태는 앱에서 확인하세요.' }
+    ? { ok: true, code: 'ACK', safeMessage: '앱이 영상 후보를 수신했습니다. Windows 앱에서 확인하세요.' }
     : failure('INVALID_PAYLOAD'));
 }
 export function testConnection(runtime: Runtime): Promise<NativeResult> {

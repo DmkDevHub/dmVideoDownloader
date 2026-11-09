@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-06] display candidates delivered by the Chrome native host
+
+- Chrome for Testing 157 실제 확장 팝업의 내부 선택 메시지→Chrome Native Host→숨김 Tauri 후보 행→ACK PASS. 운영 등록/해제 명령으로 임시 HKCU 등록 후 제거 확인. 화면 클릭·시각적 인수와 실제 다운로드는 미검증.
+
 ## 2026-11-09 — [R3-05] repair portable paths and changed extension IDs
 
 - TC-12/18 파일·등록 부분 PASS. 공백과 한글 경로로 실제 폴더 이동 후 이전 위치 부재, 경로 불일치, 명시 복구와 ID 교체, 이전 ID 거부를 격리 HKCU에서 확인. 설정 창에 기존/현재 경로와 확장 재로드 안내. 실제 브라우저 재연결 검증은 별도.

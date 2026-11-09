@@ -48,7 +48,7 @@ try {
     }
   }
   assert.ok(received, 'Host never received desktop ACK');
-  writeFileSync(join(root, 'bridge-ack'), 'ok');
+  writeFileSync(join(root, 'bridge-ack'), 'bridge-row');
   assert.equal(await exit, 0);
   assert.match(stdout, /SMOKE_PASS:/u);
   console.log('NATIVE_BRIDGE_PASS: native host -> verified Windows pipe -> mounted desktop -> ACK');

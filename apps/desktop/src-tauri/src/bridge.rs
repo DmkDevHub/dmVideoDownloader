@@ -1,4 +1,5 @@
-use dm_video_protocol::{pipe, Ack, Body, Candidate, Code, Message};
+use dm_video_protocol::{pipe, Ack, Body, Candidate, Code, Message, SourceType};
+use serde::Serialize;
 use std::{
     path::Path,
     sync::{Arc, Mutex},
@@ -6,6 +7,33 @@ use std::{
 
 pub struct Bridge {
     inbox: Mutex<Vec<(String, Candidate)>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateRow {
+    id: String,
+    title: String,
+    source_type: SourceType,
+}
+
+#[tauri::command]
+pub fn received_candidates(bridge: tauri::State<Arc<Bridge>>) -> Result<Vec<CandidateRow>, String> {
+    let inbox = bridge.inbox.lock().map_err(|_| "BRIDGE_BUSY")?;
+    Ok(inbox
+        .iter()
+        .rev()
+        .map(|(id, candidate)| CandidateRow {
+            id: id.clone(),
+            title: candidate
+                .page_title
+                .as_ref()
+                .filter(|title| !title.trim().is_empty() && !title.contains("://"))
+                .cloned()
+                .unwrap_or_else(|| "Chrome 영상 후보".into()),
+            source_type: candidate.source_type.clone(),
+        })
+        .collect())
 }
 impl Bridge {
     pub fn new() -> Self {
@@ -68,13 +96,13 @@ impl Bridge {
 #[cfg(feature = "smoke-test")]
 #[tauri::command]
 pub fn smoke_bridge_received(bridge: tauri::State<Arc<Bridge>>) -> bool {
-    if !std::env::var_os("DM_SMOKE_ROOT")
-        .is_some_and(|root| std::path::PathBuf::from(root).join("bridge-ack").is_file())
-    {
+    let Some(expected) = std::env::var_os("DM_SMOKE_ROOT").and_then(|root| {
+        std::fs::read_to_string(std::path::PathBuf::from(root).join("bridge-ack")).ok()
+    }) else {
         return false;
-    }
+    };
     bridge
         .inbox
         .lock()
-        .is_ok_and(|inbox| inbox.len() == 1 && inbox[0].1.candidate_id == "bridge-row")
+        .is_ok_and(|inbox| inbox.len() == 1 && inbox[0].1.candidate_id == expected)
 }
