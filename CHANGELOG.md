@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R4-02] analyze public URLs through a guarded proxy
+
+- 공개 MDN HTML5 페이지의 MP4·WebM 포맷 2개와 직접 MP4 1개를 Windows 실제 yt-dlp로 확인했다. 직접 URL 분석과 결과 표를 연결했다. 사설 주소 CONNECT/HTTP 차단, 혼합 DNS 응답 거부, 검증한 IP로 연결, 메타데이터에서 URL·헤더 제외 테스트 PASS. 범용·HTML5 추출기를 사용하며 HTTPS 터널 내부는 해석하지 않는다.
+
 ## 2026-11-09 — [R4-01] diagnose portable media tools
 
 - TC-13 PASS. 실행 파일 옆 tools의 두 도구를 제한 시간과 출력 상한 안에서 검사하며 누락·경로 오류·실행 실패·지원 버전을 구분한다. Windows 실제 yt-dlp 2026.10.26과 FFmpeg 9.0.2 버전 응답 확인. Rust 진단 테스트, 타입 검사와 데스크톱 Vitest 13개 통과.

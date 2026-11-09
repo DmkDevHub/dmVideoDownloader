@@ -5,8 +5,21 @@ import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
 import { connectionLabel, registrationLabel, type BrowserRuntime, type ConnectionStatus } from './browserConnection';
+import { analysisError, type AnalysisReport } from './analysis';
 
 const address = ref('');
+const analysis = ref<AnalysisReport>();
+const analysisBusy = ref(false);
+const analysisMessage = ref('');
+async function analyzeAddress() {
+  if (analysisBusy.value || !address.value.trim()) return;
+  analysisBusy.value = true;
+  analysis.value = undefined;
+  analysisMessage.value = '';
+  try { analysis.value = await invoke<AnalysisReport>('analyze_url', { address: address.value.trim() }); }
+  catch (error) { analysisMessage.value = analysisError(error); }
+  finally { analysisBusy.value = false; }
+}
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
 const startupError = ref('');
 const snapshotState = ref<SettingsSnapshot>();
@@ -181,8 +194,15 @@ onMounted(async () => {
     </header>
     <section class="panel" aria-label="영상 주소">
       <label for="video-url">영상 URL 직접 입력</label>
-      <div class="input-row"><input id="video-url" v-model="address" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" /><button disabled>분석</button></div>
-      <p class="hint">인증 없이 접근 가능한 공개 영상만 지원합니다. 분석 기능은 준비 중입니다.</p>
+      <form class="input-row" @submit.prevent="analyzeAddress"><input id="video-url" v-model="address" :disabled="analysisBusy" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" maxlength="8192" /><button :disabled="analysisBusy || !address.trim()">{{ analysisBusy ? '분석 중…' : '분석' }}</button></form>
+      <p class="hint">공개 영상의 포맷을 확인합니다.</p>
+      <p v-if="analysisMessage" role="alert" class="error">{{ analysisMessage }}</p>
+      <div v-if="analysis" aria-label="포맷 분석 결과" data-analysis-result>
+        <h3>{{ analysis.title }}</h3>
+        <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>화질</th></tr></thead><tbody>
+          <tr v-for="(format, index) in analysis.formats" :key="`${format.id}-${index}`"><td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ format.height ? `${format.height}p` : '미확인' }}</td></tr>
+        </tbody></table></div>
+      </div>
       <div class="status-row"><span class="badge">Chrome 연동: {{ connectionLabel(connection) }}</span><span>자동 감지 설정: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐' : '꺼짐') : '설정 확인 필요' }}</span></div>
     </section>
     <section class="panel" aria-labelledby="candidates-heading">

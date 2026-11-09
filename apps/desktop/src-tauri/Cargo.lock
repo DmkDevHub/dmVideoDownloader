@@ -642,12 +642,14 @@ name = "dm-video-desktop"
 version = "0.1.0"
 dependencies = [
  "dm-video-protocol",
+ "httparse",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tempfile",
+ "url",
  "windows-sys 0.61.2",
  "winreg",
 ]
