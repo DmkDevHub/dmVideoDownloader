@@ -70,7 +70,7 @@
 
 폴더를 이동하면 새 EXE에서 [연결 복구/재등록]을 실행하고, 확장 폴더도 이동했다면 새 위치를 다시 로드하고 ID를 확인한다. Chrome 웹스토어 등록·강제 설치·기업 정책 변경은 기본 배포에 포함하지 않는다. 상세 절차는 [설치 안내](docs/BROWSER_EXTENSION.md#8-설치-및-연결-절차-v12)와 [포터블 배포](docs/PACKAGING.md)를 따른다.
 
-최초 설계 ZIP은 15개 Markdown 문서로 구성되었다. 현재 저장소에는 단계별로 앱 소스를 추가한다. 다운로드 도구는 아직 동봉하지 않는다. 설계 버전 v1.2와 IPC `version: 1`, 설정 `schemaVersion: 1`은 서로 다른 버전이다.
+설계 버전 v1.2와 IPC `version: 1`, 설정 `schemaVersion: 1`은 서로 다른 버전이다. Windows x64 포터블 ZIP에 앱, Host, Chrome 확장과 검증한 yt-dlp·FFmpeg를 동봉할 수 있다. 시스템 WebView2 Runtime이 필요하다. [패키징과 설치 절차](docs/PACKAGING.md)
 
 ## 로컬 개발 및 내부 검증
 
@@ -85,6 +85,7 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 | `npm run build:host` | `shared/protocol/target/debug/VideoNativeHost.exe` 빌드 |
 | `npm run test:native` | 공통 Rust 프로토콜과 실제 Host 프로세스 검증 |
 | `npm run stage:connection` | 앱·Host·확장을 빌드하고 `dist/connection-*` 새 폴더에 배치 |
+| `npm run package:portable -- <도구 루트>` | 릴리스 앱·Host, 확장, 검증된 도구와 해시를 담은 Windows x64 ZIP 생성 |
 | `npm run build:extension` | Chrome unpacked 로드 대상 `extension/dist/` 생성 |
 | `npm run test:extension:chrome` | 임시 프로필의 headless Chrome for Testing에서 실제 확장 내부 검증. `DM_CHROME_BINARY` 지정 가능 |
 | `npm run build:frontend` | 타입 검사 및 Vue 번들 생성 |
@@ -107,7 +108,7 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 
 손상 설정은 자동으로 덮어쓰지 않는다. 같은 설정창의 [손상 파일 백업 후 기본값 저장]을 선택하면 `data/settings.backup-*.json`에 원본을 보관한 뒤 복구한다. 미래 스키마는 저장·복구를 거부하며 호환 앱이 필요하다. 다른 앱이 설정을 변경했다면 덮어쓰지 않고 재시작을 안내한다. 앱 폴더에 쓸 수 없으면 쓰기 가능한 위치로 포터블 폴더 전체를 옮겨 실행한다.
 
-`npm run stage:connection`으로 만든 폴더의 `VideoDownloader.exe`를 실행한다. 설정에서 설치 안내를 열고 Chrome 개발자 모드로 같은 폴더의 `extension/`을 로드한다. 팝업의 실제 ID를 앱에 입력하고 호스트를 등록한다. 앱에서 연결 테스트 대기를 시작한 뒤 30초 안에 팝업에서 연결 테스트를 실행한다. 등록 경로와 연결 성공 여부는 앱 설정에서 따로 확인할 수 있다.
+포터블 ZIP을 쓰기 가능한 로컬 폴더에 풀고 `VideoDownloader.exe`를 실행한다. 설정에서 설치 안내를 열고 Chrome 개발자 모드로 같은 폴더의 `extension/`을 로드한다. 팝업의 실제 ID를 앱에 입력하고 호스트를 등록한다. 앱에서 연결 테스트 대기를 시작한 뒤 30초 안에 팝업에서 연결 테스트를 실행한다. 등록 경로와 연결 성공 여부는 앱 설정에서 따로 확인할 수 있다. 폴더 이동·연결 해제와 지원 범위는 ZIP에 동봉된 README를 따른다.
 
 데스크톱 smoke는 `.test-output/smoke-*`의 격리 데이터만 사용한다. 사용자 설정·다운로드 폴더와 레지스트리를 변경하지 않고 사용자 Chrome/탐색기/폴더 선택창을 실행하지 않는다. 별도 확장 검증은 아래 headless Chrome for Testing을 사용한다. 시각적 배치와 실제 OS 선택창 조작은 미검증이며 상세 범위는 [테스트 기록](docs/TEST_PLAN.md)을 따른다.
 

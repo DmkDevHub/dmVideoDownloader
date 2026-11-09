@@ -202,6 +202,9 @@ onMounted(async () => {
           await invoke('save_settings', { settings: { ...snapshot.settings, completionNotification: false } });
           const second = await startDownload();
           const secondError = downloadMessage.value;
+          const secondWasActive = jobs.value.some(job => job.id === second && ['queued', 'analyzing', 'downloading'].includes(job.phase));
+          await invoke('save_settings', { settings: { ...snapshot.settings, completionNotification: false,
+            downloadDirectory: snapshot.settings.downloadDirectory + ' HLS', format: 'mkv', quality: '720' } });
           address.value = 'https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8';
           await analyzeAddress();
           const streamAnalysisError = analysisMessage.value;
@@ -221,14 +224,15 @@ onMounted(async () => {
             await nextTick();
             const saved = jobs.value.filter(job => job.phase === 'completed');
             if (jobs.value.some(job => job.phase === 'failed')) break;
-            downloadsShown = new Set([first, second, hls]).size === 3 && saved.length === 3 &&
-              saved.every(job => job.filename?.endsWith('.mp4')) && saved.some(job => job.id === hls && job.height === 576) &&
+            downloadsShown = secondWasActive && new Set([first, second, hls]).size === 3 && saved.length === 3 &&
+              saved.every(job => job.filename?.endsWith(job.id === hls ? '.mkv' : '.mp4')) &&
+              saved.some(job => job.id === hls && job.height === 576) &&
               new Set(saved.map(job => job.filename)).size === 3 &&
               document.querySelectorAll('[data-download-row]').length === 3 &&
               await invoke<number>('smoke_notification_count') === 1;
             if (!downloadsShown) await new Promise(resolve => setTimeout(resolve, 250));
           }
-          smokeDetails = JSON.stringify({ candidateShown, directShown, first, second, firstError, secondError,
+          smokeDetails = JSON.stringify({ candidateShown, directShown, first, second, firstError, secondError, secondWasActive,
             hls, streamAnalysisError, streamDownloadError,
             jobs: jobs.value.map(({ phase, error }) => ({ phase, error })),
             notifications: await invoke<number>('smoke_notification_count') });

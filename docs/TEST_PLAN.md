@@ -206,3 +206,32 @@ Windows 알림의 시각 표시, 사용자 클릭·키보드 인수, Chrome 감�
 `DM_R4_TOOL_ROOT`를 설정한 `npm run verify`는 숨김 WebView의 HLS 작업 요청, Windows 저장 및 FFmpeg 양쪽 트랙 디코딩을 추가 검증한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib real_segmented_dash -- --ignored --nocapture`는 공개 DASH 조각 전송을 재현한다. `DM_MEDIA_FIXTURE`에 기존 공개 MP4를 지정한 `npm run test:extension:chrome`은 실제 브라우저 감지·그룹화와 MP4 재생을 검사한다.
 
 실제 Chrome에서 사용자가 HLS/DASH를 재생하고 팝업을 클릭하는 전체 릴리스 인수와 화면 시각 확인은 미검증이다. 일반적인 MPEG-TS/AAC 재생목록 및 실제 CDN의 바이트 범위 HLS는 위 공개 fMP4 샘플과 별도 조합이다.
+
+## 14. R7 포터블 릴리스 검증 기록 (2026-11-09)
+
+Windows x64에서 압축 해제한 릴리스 앱과 Native Host를 사용했다. Chrome 통합은 Chrome for Testing의 새 임시 프로필, 데스크톱 기능 통합은 테스트 명령만 추가한 숨김 WebView를 사용했다. 화면·키보드 조작과 조직 정책 변경은 테스트에 사용하지 않았다.
+
+| ID | 확인 결과 | 남은 인수 조건 |
+|---|---|---|
+| TC-01 | PASS. 설정 저장·재실행, 한글 경로 로드 및 실제 공개 MP4 저장 확인 | 실제 Windows 폴더 선택창 조작 |
+| TC-02 | 부분 확인. 상대·UNC·장치·보호 경로 거부와 쓰기 확인 테스트 통과 | 실제 리파스 지점과 별도 계정에서 ACL이 쓰기를 거부하는 폴더 |
+| TC-03 | 부분 확인. Chrome에서 공개 CC0 MP4 재생 시간 증가와 후보 표시 확인. WebM 요청의 후보 감지 확인 | 별도 공개 WebM 재생 |
+| TC-04 | 부분 확인. Chrome의 HLS 요청 감지와 숨김 앱의 공개 HLS 저장·두 트랙 디코딩 확인 | Chrome에서 같은 HLS의 재생부터 팝업 선택·저장까지의 연속 실사용 |
+| TC-05 | 부분 확인. Chrome의 DASH MIME 감지와 공개 720p DASH의 영상·음성 조각 다운로드 및 병합 결과 디코딩 확인 | Chrome에서 같은 DASH의 재생부터 팝업 선택·저장까지의 연속 실사용 |
+| TC-06 | PASS. 반복 요청과 조각 제외, HLS 대표 주소·후보 ID 유지, 탭 분리·워커 복원 확인 | |
+| TC-07 | PASS. 최고·2160p·1080p·720p 정책 테스트와 실제 720p 상한 저장 확인 | |
+| TC-08 | PASS. Windows 프로세스 종료, 취소와 파일 게시 경쟁, 실제 전송 일시정지·정리·처음부터 재개, 503 재시도·401 중단 확인 | 바이트 이어받기는 제품 지원 범위 밖 |
+| TC-09 | PASS. 실제 Chrome 미등록 응답, Native Host의 ID 불일치·앱 미실행 오류 및 복구 확인 | |
+| TC-10 | PASS. 공개 HTTP 401 응답을 인증 필요로 표시하고 재시도 중단 확인 | |
+| TC-11 | PASS. 공개 ClearKey DASH 보호 감지와 HLS 키 선언·보호 의심 거부 확인 | |
+| TC-12 | 부분 확인. 실제 릴리스 EXE가 비승격 권한에서 한글·공백 경로 이동 전후 기동하고 설정을 보존. 실제 Chrome 등록 복구·왕복 확인 | 별도 표준 사용자 계정 |
+| TC-13 | PASS. 동봉 도구 버전, 누락·오류·지원 범위 검사 및 변조 입력 거부 확인 | |
+| TC-14 | PASS. 손상 원본의 백업·복구 및 미래 스키마 보존 확인 | |
+| TC-15 | PASS. 진행 중 MP4는 기존 폴더·컨테이너에 저장되고 변경 뒤 새 HLS는 다른 폴더에 576p MKV로 저장됨 | |
+| TC-16 | 부분 확인. 실제 Chrome for Testing 새 프로필의 unpacked 로드, 실제 ID, HKCU 등록 및 안내 DOM 확인 | 일반 Chrome의 개발자 모드 토글과 폴더 선택 |
+| TC-17 | PASS. 실제 Chrome·Host·앱 왕복과 미등록/종료 오류. 제한 시간·버전/포트 일치 검증 통과 | |
+| TC-18 | 부분 확인. 공백·한글 경로로 릴리스 앱 이동과 별도 Chrome 등록 경로 복구 확인 | 일반 Chrome에서 이전 항목 제거와 새 경로 수동 로드 |
+| TC-19 | PASS. 정확한 ID 한 개, 잘못된 ID 거부, 반복 등록과 타 복사본 보호 확인 | |
+| TC-20 | 부분 확인. 누락·미등록·낡은 뷰·복구와 해제, 권한·정책 가능성 안내 확인 | 실제 조직 정책 차단 및 별도 계정의 등록 쓰기 거부 |
+
+Windows 알림의 화면 표시, 코드 서명과 SmartScreen 상호작용, 수동 Chrome 설치·재생의 시각적 인수는 미검증이다.

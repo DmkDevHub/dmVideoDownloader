@@ -40,7 +40,7 @@ R3 모드는 동일 호스트 이름의 기존 등록 값을 발견하면 중단
 
 smoke 테스트 전용 feature에서만 `DM_SMOKE_ROOT`/`DM_SMOKE_PHASE`를 사용한다. 테스트는 별도 `.test-output/smoke-*`에서 네이티브 프로세스를 순차 실행하고 설정 파일과 백업을 검사한다. 일반 앱은 환경 변수로 설정 경로를 변경하지 않으며 EXE 폴더 기준으로만 `data/settings.json`을 사용한다. 테스트 산출물은 커밋하지 않는다.
 
-Rust 잠금 파일은 데스크톱, `native-host`, `shared/protocol`에 각각 있다. 각 Cargo 명령은 해당 manifest와 잠금 파일을 사용한다. 개발 연결을 확인할 때는 `npm run stage:connection`으로 `dist/connection-*`에 새 실행 폴더를 만든다. 릴리스 동봉과 배포 검증은 R7에서 진행한다.
+Rust 잠금 파일은 데스크톱, `native-host`, `shared/protocol`에 각각 있다. 각 Cargo 명령은 해당 manifest와 잠금 파일을 사용한다. 개발 연결을 확인할 때는 `npm run stage:connection`으로 `dist/connection-*`에 새 실행 폴더를 만든다. 포터블 릴리스 ZIP의 입력 파일, 빌드 명령과 압축 해제 검증은 [패키징 문서](PACKAGING.md)를 따른다.
 
 | 산출물 | 경로 | 저장소 포함 |
 |---|---|---|
