@@ -8,7 +8,7 @@
 - 포터블은 레지스트리를 전혀 쓰지 않는다는 뜻이 아니다. Native Messaging을 사용하지 않는 직접 URL 입력은 호스트 등록 없이 동작한다.
 - 실제 Tauri 2 실행 파일·리소스·WebView2 의존성과 바이너리 재배포 조건은 Windows 11에서 검증한다. 기본 설치 패키지를 포터블 결과물과 혼동하지 않는다.
 
-## 2. 목표 런타임 결과물 구조
+## 2. 런타임 결과물 구조
 
 ```text
 VideoDownloaderPortable/
@@ -22,7 +22,10 @@ VideoDownloaderPortable/
 │  ├─ background.js
 │  ├─ content.js
 │  ├─ popup.html
-│  └─ popup.js                     # 필요 리소스도 모두 동봉
+│  ├─ popup.js
+│  └─ popup.css
+├─ notices/                       # 도구 라이선스와 출처
+├─ SHA256SUMS.txt
 ├─ native-host-manifest.json       # EXE가 현재 경로와 ID로 생성
 ├─ data/
 │  └─ settings.json
@@ -30,7 +33,11 @@ VideoDownloaderPortable/
 └─ README.txt                     # 설치/연결/이동/해제 절차
 ```
 
-이 구조는 향후 앱 빌드 산출물이다. **설계 ZIP v1.2에는 Markdown 15개만 들어 있다.** 소스의 `native-host/`는 개발 폴더이며 배포 EXE의 위치는 위 구조를 기준으로 한다. 실행 파일명은 모든 등록 코드와 일치해야 한다. `downloads.json`은 이력·복구가 필요할 때만 추가한다.
+Windows에서 `npm run package:portable -- <검증된 도구 루트>`로 릴리스 EXE, Native Host, 확장을 빌드하고 `dist/portable-*/VideoDownloaderPortable-win-x64.zip`을 만든다. ZIP 옆의 `.sha256`으로 압축 파일을, 내부 `SHA256SUMS.txt`로 구성 파일을 확인할 수 있다. 사용자별 설정, 다운로드, 호스트 매니페스트는 실행·등록 시 생성된다.
+
+입력 루트에는 `tools/yt-dlp.exe`, `tools/ffmpeg.exe`, `notices/yt-dlp-LICENSE.txt`, `notices/yt-dlp-THIRD_PARTY_LICENSES.txt`, `notices/ffmpeg-LICENSE.txt`가 필요하다. 패키징은 yt-dlp 2026.10.26과 Gyan FFmpeg 9.0.2 essentials에서 확인한 파일 해시와 Windows x64 실행 형식을 검사한다. 다른 도구 버전을 동봉하려면 출처·고지·해시를 함께 갱신한다. [yt-dlp 릴리스](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26) · [FFmpeg 빌드 제공처](https://www.gyan.dev/ffmpeg/builds/)
+
+로컬 검증 패키지는 미서명이며 시스템에 설치된 WebView2 Runtime을 사용한다. 공개 배포를 위한 서명 및 동봉 구성요소의 재배포 검토는 별도 인수 범위이다. [Tauri Windows 및 WebView2 안내](https://v2.tauri.app/distribute/windows-installer/)
 
 ## 3. 최초 설치와 등록
 

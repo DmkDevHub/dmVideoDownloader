@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R7-01] build a verified Windows portable ZIP
+
+- Windows x64 릴리스 앱·Host, 빌드된 확장, 검증된 yt-dlp/FFmpeg 및 라이선스·출처를 ZIP으로 묶었다. 도구 변조 입력을 빌드 전에 거부했다. 별도 추출 폴더에서 페이로드 15개와 ZIP SHA-256을 검증했다. 시스템 WebView2를 사용하는 미서명 로컬 검증용 패키지이다.
+
 ## 2026-11-09 — [R6-04] classify stream failures and verify HLS through the app
 
 - 누락·빈 조각, 잘못된 범위, 전송 중단, 요청 한도와 리디렉션을 고정 메시지로 분류했다. 정상 206, 잘못된 범위, 인증성 주소 차단과 실제 공개 HTTP/DRM 응답, 503 재시도 및 401 즉시 중단을 회귀 검증했다. npm run verify 단위 80개와 숨김 WebView에서 공개 HLS 저장 및 양쪽 트랙 디코딩 PASS. 화면 시각 인수는 미검증.
