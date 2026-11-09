@@ -14,7 +14,7 @@ use std::{
 };
 use url::Url;
 
-pub(super) const MAX_PARTS: usize = 1000;
+pub(super) use proxy::MAX_MEDIA_SEGMENTS as MAX_PARTS;
 const MAX_PLAYLIST: usize = 1024 * 1024;
 
 pub(super) struct Part {

@@ -16,6 +16,7 @@ use std::{
 };
 use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
+mod dash;
 mod hls;
 pub(crate) mod notification;
 pub mod queue;
@@ -97,7 +98,7 @@ fn download(
         .as_deref()
         .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
     let hls = format.media.as_ref().is_some_and(extract::Media::is_hls);
-    let streams = hls
+    let mut streams = hls
         .then(|| stream::StreamClient::new(control))
         .transpose()?;
     let audio = if let Some(streams) = &streams {
@@ -108,7 +109,8 @@ fn download(
             .iter()
             .filter(|candidate| {
                 candidate.tracks == extract::Tracks::AudioOnly
-                    && direct_transfer(candidate)
+                    && dash_or_direct(candidate)
+                    && same_manifest(format, candidate)
                     && matches!(candidate.container.as_deref(), Some("m4a" | "webm"))
                     && (settings.format != Container::Mp4
                         || candidate.container.as_deref() == Some("m4a"))
@@ -121,10 +123,22 @@ fn download(
         && audio.is_none()
         && format.tracks == extract::Tracks::VideoOnly
         && report.formats.iter().any(|candidate| {
-            candidate.tracks == extract::Tracks::AudioOnly && direct_transfer(candidate)
+            candidate.tracks == extract::Tracks::AudioOnly
+                && dash_or_direct(candidate)
+                && same_manifest(format, candidate)
         })
     {
         return Err("CONTAINER_INCOMPATIBLE");
+    }
+    if let Some(dash) = [Some(format), audio]
+        .into_iter()
+        .flatten()
+        .filter_map(|format| format.media.as_ref())
+        .find(|media| media.is_dash())
+    {
+        let client = stream::StreamClient::new(control)?;
+        dash::check_manifest(&client, dash)?;
+        streams = Some(client);
     }
     let output_ext = match settings.format {
         Container::Mp4 => "mp4",
@@ -284,7 +298,21 @@ fn direct_transfer(format: &extract::Format) -> bool {
 }
 
 fn supported_transfer(format: &extract::Format) -> bool {
-    direct_transfer(format) || format.media.as_ref().is_some_and(extract::Media::is_hls)
+    dash_or_direct(format) || format.media.as_ref().is_some_and(extract::Media::is_hls)
+}
+
+fn dash_or_direct(format: &extract::Format) -> bool {
+    direct_transfer(format) || format.media.as_ref().is_some_and(extract::Media::is_dash)
+}
+
+fn same_manifest(video: &extract::Format, audio: &extract::Format) -> bool {
+    let manifest = |format: &extract::Format| {
+        format
+            .media
+            .as_ref()
+            .and_then(|media| media.manifest.clone())
+    };
+    manifest(video) == manifest(audio)
 }
 
 fn same_family(video_ext: &str, audio: &extract::Format) -> bool {
@@ -433,6 +461,25 @@ fn transfer(
         let (base, text) = streams.playlist(&media.url)?;
         let (parts, demux) = hls::plan(&base, &text)?;
         streams.transfer(&parts, path, update)?;
+        return Ok(demux);
+    }
+    if media.is_dash() {
+        let demux = match format.container.as_deref() {
+            Some("mp4" | "m4a") => Demux::Mov,
+            Some("webm") => Demux::Matroska,
+            _ => return Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
+        };
+        let parts: Vec<_> = media
+            .dash_segments
+            .iter()
+            .map(|url| stream::Part {
+                url: url.clone(),
+                range: None,
+            })
+            .collect();
+        streams
+            .ok_or("DOWNLOAD_FAILED")?
+            .transfer(&parts, path, update)?;
         return Ok(demux);
     }
     let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
@@ -751,6 +798,54 @@ mod tests {
             .is_some_and(|(done, total)| done == total && total > 1)));
         decode(&root, &output.path().join(result.filename), true);
         println!("HLS_DOWNLOAD_AND_DECODE_PASS: 576p with audio");
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and downloads a public DASH sample"]
+    fn real_segmented_dash_saves_and_decodes_both_tracks() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let output = tempfile::tempdir().unwrap();
+        let mut settings = Settings::defaults(output.path().to_str().unwrap().into());
+        settings.quality = Quality::Q720;
+        settings.format = Container::Mp4;
+        let (send, receive) = std::sync::mpsc::channel();
+        let result = download(
+            &Work {
+                root: root.clone(),
+                settings,
+                page: "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd".into(),
+                media: None,
+            },
+            &Control::default(),
+            move |event| {
+                if let Update::Progress(progress) = event {
+                    send.send(progress).unwrap();
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(result.height, Some(720));
+        assert_eq!(
+            receive
+                .try_iter()
+                .filter(|progress| progress.segments == Some((160, 160)))
+                .count(),
+            2
+        );
+        let output_file = output.path().join(result.filename);
+        let mut command = Command::new(root.join("tools/ffmpeg.exe"));
+        command
+            .args(["-nostdin", "-v", "error", "-xerror", "-i"])
+            .arg(output_file)
+            .args([
+                "-map", "0:V:0", "-map", "0:a:0", "-t", "5", "-f", "null", "-",
+            ]);
+        assert!(
+            process::run(&mut command, Duration::from_secs(30), 4096, 4096)
+                .unwrap()
+                .success
+        );
+        println!("SEGMENTED_DASH_PASS: 720p with audio, 160 segments per track");
     }
 
     fn decode(root: &Path, file: &Path, audio: bool) {

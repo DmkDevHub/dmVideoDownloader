@@ -25,3 +25,4 @@ sha2 = "0.10"
 url = "2"
 httparse = "1"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls"] }
+quick-xml = "0.42"

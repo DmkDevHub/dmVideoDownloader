@@ -643,6 +643,7 @@ version = "0.1.0"
 dependencies = [
  "dm-video-protocol",
  "httparse",
+ "quick-xml",
  "reqwest",
  "serde",
  "serde_json",

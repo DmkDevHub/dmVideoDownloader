@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R6-02] transfer validated segmented DASH video and audio
+
+- TC-05 전송 검증 PASS. 공개 Big Buck Bunny 정적 DASH에서 720p 영상과 분리 음성의 초기화/미디어 조각을 각각 160개 전송해 MP4로 병합했다. 출력 영상·음성의 처음 5초를 FFmpeg로 디코딩했다. Rust 33개 PASS. 보호·동적/다중 기간·외부 링크·범위 조각 거부와 주소 검증을 포함한다.
+
 ## 2026-11-09 — [R6-01] download clear HLS variants and matched audio
 
 - TC-04 전송 검증 PASS. 공개 Shaka HLS 마스터에서 720p 상한 이하 576p 영상과 기본 음성을 선택해 조각을 받고 MP4로 병합하여 두 트랙을 디코딩했다. 보호 선언·라이브·사설/민감 주소·바이트 범위 검증, Rust 31개와 타입 검사 PASS. 브라우저 UI 조작과 시각 인수는 미검증.

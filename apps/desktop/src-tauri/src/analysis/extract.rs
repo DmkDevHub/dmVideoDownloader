@@ -26,6 +26,8 @@ struct RawFormat {
     url: Option<String>,
     manifest_url: Option<String>,
     protocol: Option<String>,
+    fragment_base_url: Option<String>,
+    fragments: Option<Vec<RawFragment>>,
     abr: Option<f64>,
     tbr: Option<f64>,
     ext: Option<String>,
@@ -34,6 +36,53 @@ struct RawFormat {
     vcodec: Option<String>,
     acodec: Option<String>,
     has_drm: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct RawFragment {
+    url: Option<String>,
+    path: Option<String>,
+    range: Option<serde_json::Value>,
+}
+
+impl RawFormat {
+    fn dash_segments(&self) -> Result<Vec<url::Url>, &'static str> {
+        if self.protocol.as_deref() != Some("http_dash_segments") {
+            return Ok(Vec::new());
+        }
+        let fragments = self
+            .fragments
+            .as_ref()
+            .filter(|items| !items.is_empty())
+            .ok_or("DASH_MANIFEST_UNSUPPORTED")?;
+        if fragments.len() > proxy::MAX_MEDIA_SEGMENTS {
+            return Err("DOWNLOAD_LIMIT");
+        }
+        let base = self
+            .fragment_base_url
+            .as_deref()
+            .map(|base| proxy::target(base).ok_or("URL_NOT_ALLOWED"))
+            .transpose()?;
+        fragments
+            .iter()
+            .map(|fragment| {
+                if fragment.range.is_some() {
+                    return Err("DASH_MANIFEST_UNSUPPORTED");
+                }
+                if let Some(url) = &fragment.url {
+                    return proxy::target(url).ok_or("URL_NOT_ALLOWED");
+                }
+                let base = base.as_ref().ok_or("DASH_MANIFEST_UNSUPPORTED")?;
+                let path = fragment
+                    .path
+                    .as_deref()
+                    .filter(|path| !path.is_empty())
+                    .ok_or("DASH_MANIFEST_UNSUPPORTED")?;
+                let url = base.join(path).map_err(|_| "URL_NOT_ALLOWED")?;
+                proxy::target(url.as_str()).ok_or("URL_NOT_ALLOWED")
+            })
+            .collect()
+    }
 }
 
 #[derive(Serialize)]
@@ -56,10 +105,14 @@ pub struct Media {
     pub url: url::Url,
     pub protocol: String,
     pub manifest: Option<url::Url>,
+    pub dash_segments: Vec<url::Url>,
 }
 impl Media {
     pub fn is_hls(&self) -> bool {
         matches!(self.protocol.as_str(), "m3u8_native" | "m3u8")
+    }
+    pub fn is_dash(&self) -> bool {
+        self.protocol == "http_dash_segments"
     }
 }
 
@@ -101,7 +154,7 @@ fn dimension(value: Option<i64>) -> Option<u32> {
         .filter(|value| (1..=32_768).contains(value))
         .map(|value| value as u32)
 }
-fn normalize(raw: RawFormat) -> Option<Format> {
+fn normalize(raw: RawFormat, dash_segments: Vec<url::Url>) -> Option<Format> {
     let video = Codec::parse(raw.vcodec);
     let audio = Codec::parse(raw.acodec);
     let container = format_tag(raw.ext, 16).map(|value| value.to_ascii_lowercase());
@@ -142,6 +195,7 @@ fn normalize(raw: RawFormat) -> Option<Format> {
                 url,
                 protocol,
                 manifest: raw.manifest_url.as_deref().and_then(proxy::target),
+                dash_segments,
             }),
     })
 }
@@ -193,6 +247,7 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
     let mut excluded_protected = 0;
     let mut confirmed_protection = false;
     let mut excluded_address = false;
+    let mut segment_failure = None;
     let title = raw
         .title
         .as_deref()
@@ -210,21 +265,29 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
     let mut formats: Vec<_> = raw
         .formats
         .into_iter()
-        .filter(|format| {
+        .filter_map(|format| {
             if let Some(reason) = protected(format.has_drm.as_ref()) {
                 excluded_protected += 1;
                 confirmed_protection |= reason == "DRM_PROTECTED";
-                false
-            } else {
-                let allowed = [format.url.as_deref(), format.manifest_url.as_deref()]
-                    .into_iter()
-                    .flatten()
-                    .all(|url| proxy::target(url).is_some());
-                excluded_address |= !allowed;
-                allowed
+                return None;
+            }
+            if [format.url.as_deref(), format.manifest_url.as_deref()]
+                .into_iter()
+                .flatten()
+                .any(|url| proxy::target(url).is_none())
+            {
+                excluded_address = true;
+                return None;
+            }
+            match format.dash_segments() {
+                Ok(segments) => normalize(format, segments),
+                Err(reason) => {
+                    excluded_address |= reason == "URL_NOT_ALLOWED";
+                    segment_failure = Some(reason);
+                    None
+                }
             }
         })
-        .filter_map(normalize)
         .filter(|format| ids.insert(format.id.clone()))
         .take(256)
         .collect();
@@ -240,6 +303,9 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
         }
         if excluded_address {
             return Err("URL_NOT_ALLOWED");
+        }
+        if let Some(reason) = segment_failure {
+            return Err(reason);
         }
         return Err("NO_FORMATS");
     }
@@ -382,6 +448,30 @@ impl Analyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn validates_every_dash_segment_before_exposing_a_format() {
+        let input = |path| {
+            format!(
+                r#"{{"formats":[{{"format_id":"v","url":"https://example.org/main.mpd","manifest_url":"https://example.org/main.mpd","protocol":"http_dash_segments","fragment_base_url":"https://example.org/parts/","fragments":[{{"path":"init.m4s"}},{{"path":"{path}"}}]}}]}}"#
+            )
+        };
+        let safe = report(input("s1.m4s").as_bytes()).unwrap();
+        assert_eq!(
+            safe.formats[0].media.as_ref().unwrap().dash_segments[1].as_str(),
+            "https://example.org/parts/s1.m4s"
+        );
+        assert!(!serde_json::to_string(&safe).unwrap().contains("s1.m4s"));
+        for path in [
+            "//127.0.0.1/private",
+            "segment.m4s?token=secret",
+            "file:///C:/test",
+        ] {
+            assert_eq!(
+                report(input(path).as_bytes()).err(),
+                Some("URL_NOT_ALLOWED")
+            );
+        }
+    }
     #[test]
     fn projects_only_safe_metadata() {
         let result = report(br#"{"title":"Video","formats":[{"format_id":"18","ext":"mp4","height":720,"url":"https://example.org/video.mp4"},{"format_id":"19","url":"https://example.org/?token=secret"}],"http_headers":{"Cookie":"secret"}}"#).unwrap();

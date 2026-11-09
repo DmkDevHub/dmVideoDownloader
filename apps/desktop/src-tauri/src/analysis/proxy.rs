@@ -15,6 +15,7 @@ const MAX_HEADER: usize = 16 * 1024;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CONNECTIONS: usize = 12;
 const MAX_REQUESTS: usize = 96;
+pub(crate) const MAX_MEDIA_SEGMENTS: usize = 1000;
 
 struct Limits {
     stopped: AtomicBool,
