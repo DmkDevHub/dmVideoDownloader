@@ -1,4 +1,4 @@
-mod process;
+pub(crate) mod process;
 mod tools;
 
 #[tauri::command]
@@ -15,8 +15,8 @@ pub async fn tool_diagnostics(
         .map_err(|_| "TOOL_DIAGNOSTICS_FAILED".into())
 }
 
-mod extract;
-mod proxy;
+pub(crate) mod extract;
+pub(crate) mod proxy;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -82,4 +82,4 @@ pub async fn analyze_candidate(
     .map_err(|_| "ANALYSIS_FAILED")?
     .map_err(str::to_owned)
 }
-mod failure;
+pub(crate) mod failure;

@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R5-01] download public progressive video and report progress
+
+- 공개 MP4를 기존 주소 검증 후 실제 yt-dlp로 내려받고 바이트 기준 진행률을 받았다. 1,128,375바이트 파일을 FFmpeg로 끝까지 디코딩하고 임시 디렉터리 정리를 확인했다. npm run check, npm test, 데스크톱 Rust 23개 PASS. 단일 MP4/WebM 작업 기준이며 화면 시각 인수는 미검증.
+
 ## 2026-11-09 — [R4-05] classify public media analysis failures
 
 - TC-10/11 PASS. 인증 필요·만료/제거·접근 거부·DRM 보호/의심·미지원·네트워크 오류를 분류하며 보호 및 허용되지 않은 주소의 포맷을 제외한다. 실제 HTTP 401/403/410, 공개 ClearKey DASH, 내부 주소 리디렉션 차단, 공개 HLS 11개 포맷, 숨김 WebView 결과/오류 표시를 확인했다. npm run verify 및 실제 도구 테스트 7개 PASS. HTTPS 터널 내부와 화면 시각 인수는 별도 범위이다.

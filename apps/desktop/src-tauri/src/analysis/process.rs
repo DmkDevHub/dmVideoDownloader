@@ -1,5 +1,5 @@
 use std::{
-    io::Read,
+    io::{BufRead, BufReader, Read, Write},
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     os::windows::process::CommandExt,
     process::{Command, Stdio},
@@ -51,17 +51,26 @@ pub enum RunError {
 fn collect(
     reader: impl Read + Send + 'static,
     limit: usize,
+    mut on_line: impl FnMut(&[u8]) + Send + 'static,
 ) -> mpsc::Receiver<Result<Vec<u8>, RunError>> {
     let (send, receive) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let result = (|| {
             let mut bytes = Vec::new();
-            reader
-                .take(limit as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| RunError::Io)?;
-            if bytes.len() > limit {
-                return Err(RunError::OutputLimit);
+            let mut reader = BufReader::new(reader.take(limit as u64 + 1));
+            loop {
+                let start = bytes.len();
+                if reader
+                    .read_until(b'\n', &mut bytes)
+                    .map_err(|_| RunError::Io)?
+                    == 0
+                {
+                    break;
+                }
+                if bytes.len() > limit {
+                    return Err(RunError::OutputLimit);
+                }
+                on_line(&bytes[start..]);
             }
             Ok(bytes)
         })();
@@ -76,6 +85,16 @@ pub fn run(
     stdout_limit: usize,
     stderr_limit: usize,
 ) -> Result<Output, RunError> {
+    run_with(command, timeout, (stdout_limit, stderr_limit), None, |_| {})
+}
+
+pub fn run_with(
+    command: &mut Command,
+    timeout: Duration,
+    limits: (usize, usize),
+    input: Option<Vec<u8>>,
+    on_line: impl FnMut(&[u8]) + Send + 'static,
+) -> Result<Output, RunError> {
     let scratch = tempfile::tempdir().map_err(|_| RunError::Io)?;
     let job = job()?;
     command
@@ -88,7 +107,11 @@ pub fn run(
     }
     let mut child = command
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -101,8 +124,16 @@ pub fn run(
             return Err(RunError::Start);
         }
     }
-    let stdout = collect(child.stdout.take().expect("piped stdout"), stdout_limit);
-    let stderr = collect(child.stderr.take().expect("piped stderr"), stderr_limit);
+    let writer = input.map(|bytes| {
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        thread::spawn(move || stdin.write_all(&bytes))
+    });
+    let stdout = collect(
+        child.stdout.take().expect("piped stdout"),
+        limits.0,
+        on_line,
+    );
+    let stderr = collect(child.stderr.take().expect("piped stderr"), limits.1, |_| {});
     let deadline = Instant::now() + timeout;
     let result = (|| {
         let mut out = None;
@@ -136,6 +167,13 @@ pub fn run(
     drop(job);
     if result.is_err() {
         let _ = child.wait();
+    }
+    if let Some(writer) = writer {
+        if result.as_ref().is_ok_and(|output| output.success)
+            && !writer.join().is_ok_and(|written| written.is_ok())
+        {
+            return Err(RunError::Io);
+        }
     }
     result
 }

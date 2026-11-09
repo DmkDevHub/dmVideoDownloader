@@ -89,6 +89,7 @@ pub fn run() {
             analysis::tool_diagnostics,
             analysis::analyze_url,
             analysis::analyze_candidate,
+            download::download_video,
             browser::browser_runtime,
             browser::browser_begin_test,
             browser::browser_connection_status,
@@ -149,6 +150,7 @@ mod analysis;
 mod bridge;
 mod browser;
 mod connection;
+mod download;
 mod folders;
 mod registration;
 mod settings;

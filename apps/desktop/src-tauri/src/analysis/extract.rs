@@ -25,6 +25,7 @@ struct RawFormat {
     format_id: Option<String>,
     url: Option<String>,
     manifest_url: Option<String>,
+    protocol: Option<String>,
     ext: Option<String>,
     width: Option<i64>,
     height: Option<i64>,
@@ -43,6 +44,13 @@ pub struct Format {
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
     pub tracks: Tracks,
+    #[serde(skip)]
+    pub media: Option<Media>,
+}
+
+pub struct Media {
+    pub url: url::Url,
+    pub protocol: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -110,6 +118,12 @@ fn normalize(raw: RawFormat) -> Option<Format> {
         video_codec: video.name(),
         audio_codec: audio.name(),
         tracks,
+        media: raw
+            .url
+            .as_deref()
+            .and_then(proxy::target)
+            .zip(raw.protocol)
+            .map(|(url, protocol)| Media { url, protocol }),
     })
 }
 #[derive(Serialize)]
@@ -266,17 +280,9 @@ impl Analyzer {
     }
 
     fn run(&self, address: url::Url, proxy: proxy::Proxy) -> Result<Report, &'static str> {
-        let mut command = Command::new(&self.exe);
+        let mut command = self.command(&proxy);
         command
             .args([
-                "--ignore-config",
-                "--no-plugin-dirs",
-                "--no-cache-dir",
-                "--no-js-runtimes",
-                "--no-remote-components",
-                "--no-cookies",
-                "--no-cookies-from-browser",
-                "--no-mark-watched",
                 "--no-playlist",
                 "--playlist-items",
                 "1",
@@ -286,17 +292,9 @@ impl Analyzer {
                 "--no-check-formats",
                 "--dump-single-json",
                 "--no-progress",
-                "--color",
-                "never",
-                "--socket-timeout",
-                "7",
-                "--retries",
-                "0",
                 "--extractor-retries",
                 "0",
-                "--proxy",
             ])
-            .arg(proxy.endpoint())
             .arg("--")
             .arg(address.as_str());
         let output = process::run(
@@ -317,6 +315,29 @@ impl Analyzer {
             return Err(failure::classify(&output.stderr));
         }
         report(&output.stdout)
+    }
+
+    pub fn command(&self, proxy: &proxy::Proxy) -> Command {
+        let mut command = Command::new(&self.exe);
+        command.args([
+            "--ignore-config",
+            "--no-plugin-dirs",
+            "--no-cache-dir",
+            "--no-js-runtimes",
+            "--no-remote-components",
+            "--no-cookies",
+            "--no-cookies-from-browser",
+            "--no-mark-watched",
+            "--color",
+            "never",
+            "--socket-timeout",
+            "7",
+            "--retries",
+            "0",
+            "--proxy",
+            proxy.endpoint(),
+        ]);
+        command
     }
 }
 

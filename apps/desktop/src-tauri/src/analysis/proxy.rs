@@ -16,15 +16,33 @@ const MAX_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CONNECTIONS: usize = 12;
 const MAX_REQUESTS: usize = 96;
 
-#[derive(Default)]
 struct Limits {
     stopped: AtomicBool,
     blocked: AtomicBool,
     connections: AtomicUsize,
     requests: AtomicUsize,
     bytes: AtomicUsize,
+    max_bytes: usize,
+    max_requests: usize,
+    relay_timeout: Duration,
     #[cfg(test)]
     fixture: Option<SocketAddr>,
+}
+impl Limits {
+    fn new(max_bytes: usize, max_requests: usize, relay_timeout: Duration) -> Self {
+        Self {
+            stopped: AtomicBool::new(false),
+            blocked: AtomicBool::new(false),
+            connections: AtomicUsize::new(0),
+            requests: AtomicUsize::new(0),
+            bytes: AtomicUsize::new(0),
+            max_bytes,
+            max_requests,
+            relay_timeout,
+            #[cfg(test)]
+            fixture: None,
+        }
+    }
 }
 pub struct Proxy {
     endpoint: String,
@@ -33,13 +51,20 @@ pub struct Proxy {
 }
 impl Proxy {
     pub fn start() -> io::Result<Self> {
-        Self::bind(Limits::default())
+        Self::bind(Limits::new(
+            MAX_BYTES,
+            MAX_REQUESTS,
+            Duration::from_secs(35),
+        ))
+    }
+    pub fn download(timeout: Duration) -> io::Result<Self> {
+        Self::bind(Limits::new(2 * 1024 * 1024 * 1024, 2048, timeout))
     }
     #[cfg(test)]
     pub fn with_test_fixture(fixture: SocketAddr) -> io::Result<Self> {
         Self::bind(Limits {
             fixture: Some(fixture),
-            ..Limits::default()
+            ..Limits::new(MAX_BYTES, MAX_REQUESTS, Duration::from_secs(35))
         })
     }
     fn bind(limits: Limits) -> io::Result<Self> {
@@ -53,7 +78,7 @@ impl Proxy {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let requests = worker.requests.fetch_add(1, Ordering::Relaxed);
-                        if requests >= MAX_REQUESTS || worker.connections.load(Ordering::Relaxed) >= MAX_CONNECTIONS {
+                        if requests >= worker.max_requests || worker.connections.load(Ordering::Relaxed) >= MAX_CONNECTIONS {
                             let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                             let _ = stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
                             continue;
@@ -265,13 +290,13 @@ fn unavailable(client: &mut TcpStream) -> io::Result<()> {
     client.write_all(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
 }
 fn relay(reader: &mut impl Read, writer: &mut impl Write, limits: &Limits) {
-    let deadline = Instant::now() + Duration::from_secs(35);
+    let deadline = Instant::now() + limits.relay_timeout;
     let mut buffer = [0; 8192];
     while !limits.stopped.load(Ordering::Relaxed) && Instant::now() < deadline {
         match reader.read(&mut buffer) {
             Ok(0) => break,
             Ok(n) => {
-                if limits.bytes.fetch_add(n, Ordering::Relaxed) + n > MAX_BYTES
+                if limits.bytes.fetch_add(n, Ordering::Relaxed) + n > limits.max_bytes
                     || writer.write_all(&buffer[..n]).is_err()
                 {
                     break;
