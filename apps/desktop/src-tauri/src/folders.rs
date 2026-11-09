@@ -2,6 +2,27 @@ use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf, Prefix};
 
+pub fn reserved_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || stem
+        .strip_prefix("COM")
+        .or_else(|| stem.strip_prefix("LPT"))
+        .is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+}
+
 pub fn check_path(path: &Path) -> Result<(), &'static str> {
     let text = path.to_str().ok_or("INVALID_DIRECTORY")?;
     if text.len() > 240 || text.contains('/') {
@@ -19,11 +40,6 @@ pub fn check_path(path: &Path) -> Result<(), &'static str> {
         return Err("UNSAFE_DIRECTORY");
     }
     for part in rest.trim_end_matches('\\').split('\\') {
-        let upper = part.split('.').next().unwrap_or("").to_ascii_uppercase();
-        let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-            || (upper.len() == 4
-                && (upper.starts_with("COM") || upper.starts_with("LPT"))
-                && matches!(upper.as_bytes()[3], b'1'..=b'9'));
         if part.is_empty()
             || part == "."
             || part == ".."
@@ -31,7 +47,7 @@ pub fn check_path(path: &Path) -> Result<(), &'static str> {
             || part
                 .chars()
                 .any(|c| c.is_control() || "<>:\"|?*".contains(c))
-            || reserved
+            || reserved_name(part)
         {
             return Err("INVALID_DIRECTORY");
         }

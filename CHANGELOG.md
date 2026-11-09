@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R5-04] publish downloads safely in the configured folder
+
+- TC-01 실제 설정 저장 후 새 Store로 읽은 한글 폴더에 공개 MP4를 저장하고 디코딩했다. 제목·제목-주소 해시·날짜-제목 규칙, Windows 예약명·경로 문자·긴 제목, 동시 같은 이름의 번호 부여와 기존 파일 보존을 테스트했다. Cargo 검사와 다운로드 테스트 PASS.
+
 ## 2026-11-09 — [R5-03] merge validated video and audio streams with FFmpeg
 
 - TC-05/07 엔진 검증. 실제 공개 Sintel DASH에서 720p 상한 이하 546p 영상과 별도 음성 스트림을 받아 FFmpeg로 MP4 스트림 복사 병합하고 두 트랙을 디코딩했다. 공개 단일 MP4 디코딩과 포맷 선택 등 다운로드 테스트 5개 PASS. FFmpeg는 로컬 작업 파일만 읽는다. Chrome 감지부터 재생까지의 릴리스 인수와 세그먼트 전송은 별도 범위이다.

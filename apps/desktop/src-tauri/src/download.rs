@@ -2,9 +2,10 @@ use crate::analysis::{extract, failure, process, proxy, tools};
 use crate::{
     bridge::Bridge,
     folders,
-    settings::{Format as Container, Quality, Settings, Store},
+    settings::{Filename, Format as Container, Quality, Settings, Store},
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     fs, io,
     os::windows::ffi::OsStrExt,
@@ -91,12 +92,8 @@ pub async fn download_video(
         return Err("URL_NOT_ALLOWED".into());
     }
     let (root, settings) = {
-        let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
-        let snapshot = store.load()?;
-        if !snapshot.can_save {
-            return Err(snapshot.notice.unwrap_or_else(|| "INVALID_SETTINGS".into()));
-        }
-        (store.root().to_path_buf(), snapshot.settings)
+        let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+        (store.root().to_path_buf(), store.current_settings()?)
     };
     ACTIVE
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
@@ -169,6 +166,18 @@ fn download(
     };
     let ffmpeg = ffmpeg(root)?;
     let directory = folders::validate_directory(&settings.download_directory)?;
+    let source = if report.source == extract::Source::Media {
+        media.unwrap_or(page)
+    } else {
+        page
+    };
+    let stem = filename_stem(
+        &report.title,
+        source,
+        &settings.filename,
+        &directory,
+        output_ext,
+    )?;
     let staging = tempfile::Builder::new()
         .prefix(".dm-video-")
         .tempdir_in(&directory)
@@ -197,18 +206,90 @@ fn download(
     });
     let path = staging.path().join(format!("finished.{output_ext}"));
     remux(&ffmpeg, &video, audio_file.as_deref(), &path)?;
-    let filename = format!("video.{output_ext}");
-    move_without_replacing(&path, &directory.join(&filename)).map_err(|error| {
-        if error.kind() == io::ErrorKind::AlreadyExists {
-            "DOWNLOAD_EXISTS"
-        } else {
-            "DOWNLOAD_SAVE_FAILED"
-        }
-    })?;
+    let filename = publish(&path, &directory, &stem, output_ext)?;
     Ok(Saved {
         filename,
         height: format.height,
     })
+}
+
+fn filename_stem(
+    title: &str,
+    address: &str,
+    rule: &Filename,
+    directory: &Path,
+    ext: &str,
+) -> Result<String, &'static str> {
+    let (prefix, suffix) = match rule {
+        Filename::Title => (String::new(), String::new()),
+        Filename::TitleId => {
+            let mut url = proxy::target(address).ok_or("URL_NOT_ALLOWED")?;
+            url.set_query(None);
+            let hash = Sha256::digest(url.as_str().as_bytes());
+            (
+                String::new(),
+                format!(
+                    "-{:02x}{:02x}{:02x}{:02x}",
+                    hash[0], hash[1], hash[2], hash[3]
+                ),
+            )
+        }
+        Filename::DateTitle => {
+            use windows_sys::Win32::{
+                Foundation::SYSTEMTIME, System::SystemInformation::GetLocalTime,
+            };
+            let mut date = SYSTEMTIME::default();
+            unsafe { GetLocalTime(&mut date) };
+            (
+                format!("{:04}-{:02}-{:02}-", date.wYear, date.wMonth, date.wDay),
+                String::new(),
+            )
+        }
+    };
+    // Leave room for the extension and a concurrent download's numbered suffix.
+    let max = 240usize
+        .saturating_sub(directory.as_os_str().len() + ext.len() + prefix.len() + suffix.len() + 10)
+        .min(120);
+    if max < "video_".len() {
+        return Err("INVALID_DIRECTORY");
+    }
+    let mut name = String::new();
+    for ch in title.split(['?', '#']).next().unwrap_or_default().chars() {
+        let ch = if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '*')
+        {
+            '_'
+        } else {
+            ch
+        };
+        if name.len() + ch.len_utf8() >= max {
+            break;
+        }
+        name.push(ch);
+    }
+    let name = name.trim_matches(['.', ' ']);
+    let name = if name.is_empty() { "video" } else { name };
+    let guard = if folders::reserved_name(name) {
+        "_"
+    } else {
+        ""
+    };
+    Ok(format!("{prefix}{guard}{name}{suffix}"))
+}
+
+fn publish(source: &Path, directory: &Path, stem: &str, ext: &str) -> Result<String, &'static str> {
+    for number in 0..=999 {
+        let filename = if number == 0 {
+            format!("{stem}.{ext}")
+        } else {
+            format!("{stem} ({number}).{ext}")
+        };
+        match move_without_replacing(source, &directory.join(&filename)) {
+            Ok(()) => return Ok(filename),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err("DOWNLOAD_SAVE_FAILED"),
+        }
+    }
+    Err("DOWNLOAD_EXISTS")
 }
 
 fn direct_transfer(format: &extract::Format) -> bool {
@@ -394,6 +475,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn names_are_safe_and_atomic_publication_preserves_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let addr = "https://example.org/watch?v=one";
+        let name = |title, rule| filename_stem(title, addr, rule, dir.path(), "mp4").unwrap();
+        assert_eq!(name(" .. ", &Filename::Title), "video");
+        assert_eq!(name("COM².txt", &Filename::Title), "_COM².txt");
+        assert_eq!(
+            name("한글/영상?value=secret", &Filename::Title),
+            "한글_영상"
+        );
+        let id = name("영상", &Filename::TitleId);
+        assert_eq!(
+            id,
+            filename_stem(
+                "영상",
+                "https://example.org/watch?v=two",
+                &Filename::TitleId,
+                dir.path(),
+                "mp4"
+            )
+            .unwrap()
+        );
+        assert!(name("영상", &Filename::DateTitle).ends_with("-영상"));
+        let long = name(&"한".repeat(300), &Filename::Title);
+        assert!(long.len() < 120);
+        let first = dir.path().join("first.tmp");
+        let second = dir.path().join("second.tmp");
+        fs::write(&first, b"one").unwrap();
+        fs::write(&second, b"two").unwrap();
+        fs::write(dir.path().join("영상.mp4"), b"existing").unwrap();
+        let paths = std::thread::scope(|threads| {
+            let a = threads.spawn(|| publish(&first, dir.path(), "영상", "mp4").unwrap());
+            let b = threads.spawn(|| publish(&second, dir.path(), "영상", "mp4").unwrap());
+            [a.join().unwrap(), b.join().unwrap()]
+        });
+        assert_ne!(paths[0], paths[1]);
+        assert_eq!(fs::read(dir.path().join("영상.mp4")).unwrap(), b"existing");
+        assert_eq!(fs::read(dir.path().join(&paths[0])).unwrap(), b"one");
+        assert_eq!(fs::read(dir.path().join(&paths[1])).unwrap(), b"two");
+    }
+
+    #[test]
     fn selects_highest_eligible_height_without_exceeding_the_limit() {
         let make = |height, tracks| extract::Format {
             id: String::new(),
@@ -483,7 +606,18 @@ mod tests {
     fn real_public_mp4_download_and_decode() {
         let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
         let output = tempfile::tempdir().unwrap();
-        let settings = Settings::defaults(output.path().to_str().unwrap().into());
+        let mut store = Store::new(
+            output.path().to_path_buf(),
+            output.path().join("Downloads").to_str().unwrap().into(),
+        );
+        let mut settings = store.load().unwrap().settings;
+        let directory = output.path().join("저장 위치");
+        settings.download_directory = directory.to_str().unwrap().into();
+        settings.filename = Filename::TitleId;
+        store.save(settings.clone()).unwrap();
+        let settings = Store::new(output.path().to_path_buf(), String::new())
+            .current_settings()
+            .unwrap();
         let (send, receive) = std::sync::mpsc::channel();
         let result = download(
             &root,
@@ -495,12 +629,13 @@ mod tests {
             },
         )
         .unwrap();
-        let file = output.path().join(result.filename);
+        assert!(result.filename.starts_with("flower-"));
+        let file = directory.join(result.filename);
         assert!(fs::metadata(&file).unwrap().len() > 0);
         assert!(receive
             .try_iter()
             .any(|value| value.downloaded > 0 && value.total.is_some()));
-        assert_eq!(fs::read_dir(output.path()).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         decode(&root, &file, false);
         println!("MP4_DOWNLOAD_AND_DECODE_PASS");
     }
