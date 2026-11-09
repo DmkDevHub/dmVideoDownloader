@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R5-02] apply best and capped video quality settings
+
+- TC-07 선택 정책 검증. 최고 및 2160p·1080p·720p 상한, 정확히 일치하는 포맷이 없을 때 상한 이하 선택, 높이 미확인/초과만 있는 경우의 안내를 테스트했다. 실제 공개 Sintel DASH 메타데이터의 최고와 720p 상한 선택을 비교했다. 공개 MP4 저장·디코딩 회귀 PASS. 화질을 바꾼 실제 DASH 파일은 R5-03에서 검증한다.
+
 ## 2026-11-09 — [R5-01] download public progressive video and report progress
 
 - 공개 MP4를 기존 주소 검증 후 실제 yt-dlp로 내려받고 바이트 기준 진행률을 받았다. 1,128,375바이트 파일을 FFmpeg로 끝까지 디코딩하고 임시 디렉터리 정리를 확인했다. npm run check, npm test, 데스크톱 Rust 23개 PASS. 단일 MP4/WebM 작업 기준이며 화면 시각 인수는 미검증.

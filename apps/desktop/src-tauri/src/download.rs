@@ -2,7 +2,7 @@ use crate::analysis::{extract, failure, process, proxy};
 use crate::{
     bridge::Bridge,
     folders,
-    settings::{Settings, Store},
+    settings::{Quality, Settings, Store},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -119,10 +119,8 @@ fn download(
 ) -> Result<Saved, &'static str> {
     let analyzer = extract::Analyzer::open(root)?;
     let report = extract::candidate(page, media, |address| analyzer.analyze(address))?;
-    let format = report
-        .formats
-        .iter()
-        .find(|format| {
+    let format = choose_video(
+        report.formats.iter().filter(|format| {
             matches!(
                 format.tracks,
                 extract::Tracks::AudioVideo | extract::Tracks::VideoOnly | extract::Tracks::Unknown
@@ -131,8 +129,9 @@ fn download(
                     .media
                     .as_ref()
                     .is_some_and(|media| matches!(media.protocol.as_str(), "http" | "https"))
-        })
-        .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
+        }),
+        &settings.quality,
+    )?;
     let ext = format
         .container
         .as_deref()
@@ -156,6 +155,32 @@ fn download(
         filename,
         height: format.height,
     })
+}
+
+fn choose_video<'a>(
+    formats: impl Iterator<Item = &'a extract::Format>,
+    quality: &Quality,
+) -> Result<&'a extract::Format, &'static str> {
+    let cap = match quality {
+        Quality::Best => None,
+        Quality::Q2160 => Some(2160),
+        Quality::Q1080 => Some(1080),
+        Quality::Q720 => Some(720),
+    };
+    let mut formats = formats.peekable();
+    if formats.peek().is_none() {
+        return Err("DOWNLOAD_FORMAT_UNSUPPORTED");
+    }
+    formats
+        .filter(|format| cap.is_none_or(|cap| format.height.is_some_and(|height| height <= cap)))
+        .max_by_key(|format| {
+            (
+                format.height.unwrap_or(0),
+                format.width.unwrap_or(0),
+                format.tracks == extract::Tracks::AudioVideo,
+            )
+        })
+        .ok_or("QUALITY_UNAVAILABLE")
 }
 
 fn transfer(
@@ -241,6 +266,78 @@ fn move_without_replacing(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selects_highest_eligible_height_without_exceeding_the_limit() {
+        let make = |height, tracks| extract::Format {
+            id: String::new(),
+            container: None,
+            width: None,
+            height,
+            video_codec: None,
+            audio_codec: None,
+            tracks,
+            media: None,
+        };
+        let formats = [
+            make(None, extract::Tracks::Unknown),
+            make(Some(2160), extract::Tracks::AudioVideo),
+            make(Some(1080), extract::Tracks::AudioVideo),
+            make(Some(720), extract::Tracks::AudioVideo),
+            make(Some(720), extract::Tracks::VideoOnly),
+        ];
+        for (quality, height) in [
+            (Quality::Best, 2160),
+            (Quality::Q2160, 2160),
+            (Quality::Q1080, 1080),
+            (Quality::Q720, 720),
+        ] {
+            let chosen = choose_video(formats.iter(), &quality).unwrap();
+            assert_eq!(chosen.height, Some(height));
+            assert_eq!(chosen.tracks, extract::Tracks::AudioVideo);
+        }
+        assert_eq!(
+            choose_video(formats[0..3].iter(), &Quality::Q720).err(),
+            Some("QUALITY_UNAVAILABLE")
+        );
+        assert_eq!(
+            choose_video(formats[2..].iter(), &Quality::Q2160)
+                .unwrap()
+                .height,
+            Some(1080)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_quality_limit_selects_lower_public_dash_variant() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let report = extract::Analyzer::open(&root)
+            .unwrap()
+            .analyze("https://storage.googleapis.com/shaka-demo-assets/sintel/dash.mpd")
+            .unwrap();
+        let select = |quality| {
+            choose_video(
+                report.formats.iter().filter(|format| {
+                    matches!(
+                        format.tracks,
+                        extract::Tracks::AudioVideo | extract::Tracks::VideoOnly
+                    )
+                }),
+                quality,
+            )
+            .unwrap()
+            .height
+            .unwrap()
+        };
+        assert!(select(&Quality::Best) > select(&Quality::Q720));
+        assert!(select(&Quality::Q720) <= 720);
+        println!(
+            "QUALITY_SELECTION_PASS: best={}p, 720p limit={}p",
+            select(&Quality::Best),
+            select(&Quality::Q720)
+        );
+    }
 
     #[test]
     fn parses_only_numeric_progress_without_disclosing_raw_output() {
