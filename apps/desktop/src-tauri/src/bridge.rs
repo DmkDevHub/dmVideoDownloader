@@ -88,6 +88,11 @@ impl Bridge {
             state.reset();
         }
     }
+    pub fn registration_lost(&self, code: Code) {
+        if let Ok(mut state) = self.connection.lock() {
+            state.registration_lost(code);
+        }
+    }
     pub fn begin_test(&self) -> Result<Status, &'static str> {
         if !self.listening.load(Ordering::Acquire) {
             return Err("HOST_START_FAILED");

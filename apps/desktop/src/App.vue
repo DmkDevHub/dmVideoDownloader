@@ -63,8 +63,21 @@ function applySnapshot(snapshot: SettingsSnapshot) {
   startupError.value = '';
 }
 async function readSettings() {
-  try { applySnapshot(await invoke<SettingsSnapshot>('load_settings')); }
+  try { applySnapshot(await invoke<SettingsSnapshot>('load_settings')); await refreshBrowserRuntime(); }
   catch (error) { startupError.value = settingsError(error); }
+}
+async function refreshBrowserRuntime() {
+  try { runtime.value = await invoke<BrowserRuntime>('browser_runtime'); }
+  catch { runtime.value = undefined; }
+}
+function openSettings() {
+  editor.value?.open();
+  void refreshBrowserRuntime();
+}
+async function persistSettings() {
+  await editor.value?.save((settings: Settings) => invoke<Settings>('save_settings', { settings }));
+  await refreshBrowserRuntime();
+  await refreshConnection();
 }
 async function recoverSettings() {
   if (!editor.value || editor.value.state.busy || !snapshotState.value?.canRecover) return;
@@ -72,6 +85,7 @@ async function recoverSettings() {
   try {
     applySnapshot(await invoke<SettingsSnapshot>('recover_settings'));
     editor.value?.open();
+    await refreshBrowserRuntime();
   } catch (error) {
     if (editor.value) editor.value.state.error = settingsError(error);
   } finally { if (editor.value) editor.value.state.busy = false; }
@@ -159,7 +173,7 @@ onMounted(async () => {
   <main data-app-ready>
     <header class="app-header">
       <div><p class="eyebrow">개인용 · Windows 포터블</p><h1>영상 다운로더</h1></div>
-      <button type="button" :disabled="!editor" @click="editor?.open()">설정</button>
+      <button type="button" :disabled="!editor" @click="openSettings">설정</button>
     </header>
     <section class="panel" aria-label="영상 주소">
       <label for="video-url">영상 URL 직접 입력</label>
@@ -180,6 +194,6 @@ onMounted(async () => {
     </section>
     <footer class="status-row"><button :disabled="!snapshotState?.canSave" @click="openDownloadFolder">다운로드 폴더 열기</button><p class="hint" role="status">{{ actionMessage }}</p></footer>
     <div v-if="startupError" class="error" role="alert">{{ startupError }} <button @click="readSettings">설정 다시 읽기</button></div>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" :status="connection" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @registration="browserRegistration" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" :status="connection" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @registration="browserRegistration" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="persistSettings" />
   </main>
 </template>

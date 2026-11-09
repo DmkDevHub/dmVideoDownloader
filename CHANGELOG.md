@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-08] diagnose registration and connection failures
+
+- TC-09/18/20 진단 부분 PASS. 격리 HKCU에서 매니페스트/Host 누락 구분과 매니페스트 복구, 실제 Host 프로세스에서 미등록·앱 종료·ID/프로토콜 불일치 확인. 설정 저장·재열기 후 진단 갱신, 대기 중 등록 변경 감지. Chrome 활성화·정책 여부는 관리 화면 안내로 남김. Rust 12개·Vitest 40개 PASS.
+
 ## 2026-11-09 — [R3-07] confirm the bounded connection handshake and sync detection
 
 - TC-17 실제 Chrome↔Host↔숨김 앱 진단 왕복 PASS. 앱에서 30초 대기, 연결·요청 ID에 묶인 PONG/ACK, 포트 종료 후 현재 성공 해제와 마지막 성공 유지. 만료 경계·다른 포트·재전송·대기 중 종료는 Rust 단위 검증. 성공 후 별도 상태 요청으로 실제 앱 자동 감지 설정을 확장에 반영. Rust 12개·Vitest 40개 PASS.

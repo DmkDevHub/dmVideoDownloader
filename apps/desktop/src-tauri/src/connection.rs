@@ -27,7 +27,7 @@ pub struct Connection {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    phase: &'static str,
+    pub phase: &'static str,
     round_trip_confirmed: bool,
     pub last_success_at: Option<String>,
     last_verified_id: Option<String>,
@@ -61,6 +61,11 @@ impl Connection {
     }
     pub fn reset(&mut self) {
         self.state = State::NeedsCheck;
+    }
+    pub fn registration_lost(&mut self, code: Code) {
+        if matches!(self.state, State::Waiting { .. } | State::Confirmed(_)) {
+            self.state = State::Failed(code);
+        }
     }
     pub fn status(&mut self, now: Instant) -> Status {
         self.expire(now);

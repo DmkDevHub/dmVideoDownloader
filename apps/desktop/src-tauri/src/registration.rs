@@ -86,6 +86,7 @@ impl Registry {
         Manifest::verify(root, id).map_err(|error| match error {
             dm_video_protocol::Code::ExtensionIdMismatch => "EXTENSION_ID_MISMATCH",
             dm_video_protocol::Code::HostPathMismatch => "HOST_PATH_MISMATCH",
+            dm_video_protocol::Code::HostNotRegistered => "MANIFEST_MISSING",
             _ => "REGISTRATION_FAILED",
         })
     }
@@ -196,6 +197,13 @@ mod tests {
         registry.register(&mut store, &id, false).unwrap();
         assert_eq!(registry.status(root, &id), Ok(()));
         assert_eq!(Manifest::read(&root.join(MANIFEST)).unwrap().id(), id);
+        std::fs::rename(root.join(MANIFEST), root.join("test-manifest-backup.json")).unwrap();
+        assert_eq!(registry.status(root, &id), Err("MANIFEST_MISSING"));
+        registry.register(&mut store, &id, true).unwrap();
+        assert_eq!(registry.status(root, &id), Ok(()));
+        std::fs::rename(root.join(HOST_EXE), root.join("test-host-backup.exe")).unwrap();
+        assert_eq!(registry.status(root, &id), Err("HOST_MISSING"));
+        std::fs::rename(root.join("test-host-backup.exe"), root.join(HOST_EXE)).unwrap();
         assert_eq!(
             registry.status(root, &"b".repeat(32)),
             Err("EXTENSION_ID_MISMATCH")

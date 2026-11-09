@@ -56,11 +56,7 @@ pub fn run() {
                 registration::Registry::chrome()
                     .status(store.root(), id)
                     .map(|()| saved.browser_auto_detect)
-                    .map_err(|error| match error {
-                        "EXTENSION_ID_MISMATCH" => dm_video_protocol::Code::ExtensionIdMismatch,
-                        "HOST_PATH_MISMATCH" => dm_video_protocol::Code::HostPathMismatch,
-                        _ => dm_video_protocol::Code::HostNotRegistered,
-                    })
+                    .map_err(browser::registration_error)
             });
             app.manage(bridge);
 

@@ -1,4 +1,5 @@
 use crate::{bridge::Bridge, connection::Status, folders, registration::Registry, settings::Store};
+use dm_video_protocol::Code;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -42,6 +43,7 @@ fn inspect(root: &Path, id: &str) -> RuntimeInfo {
             "content.js",
             "popup.html",
             "popup.js",
+            "popup.css",
         ]
         .iter()
         .all(|name| extension.join(name).is_file()),
@@ -109,8 +111,31 @@ pub fn browser_begin_test(
 }
 
 #[tauri::command]
-pub fn browser_connection_status(bridge: tauri::State<Arc<Bridge>>) -> Result<Status, String> {
+pub fn browser_connection_status(
+    store: tauri::State<Mutex<Store>>,
+    bridge: tauri::State<Arc<Bridge>>,
+) -> Result<Status, String> {
+    let status = bridge.status()?;
+    if !matches!(status.phase, "waiting" | "connected") {
+        return Ok(status);
+    }
+    let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    let result = store.current_settings().and_then(|settings| {
+        Registry::chrome().status(store.root(), &settings.browser_extension_id)
+    });
+    if let Err(code) = result {
+        bridge.registration_lost(registration_error(code));
+    }
     bridge.status().map_err(str::to_owned)
+}
+
+pub fn registration_error(error: &str) -> Code {
+    match error {
+        "EXTENSION_ID_MISMATCH" | "INVALID_EXTENSION_ID" => Code::ExtensionIdMismatch,
+        "HOST_PATH_MISMATCH" => Code::HostPathMismatch,
+        "HOST_NOT_REGISTERED" | "MANIFEST_MISSING" | "HOST_MISSING" => Code::HostNotRegistered,
+        _ => Code::RegistrationFailed,
+    }
 }
 
 fn open_folder(path: &Path) -> Result<(), String> {
@@ -174,6 +199,7 @@ mod tests {
             "content.js",
             "popup.html",
             "popup.js",
+            "popup.css",
         ] {
             std::fs::write(root.path().join("extension").join(name), b"fixture").unwrap();
         }

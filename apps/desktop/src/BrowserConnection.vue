@@ -32,7 +32,7 @@ async function copyAddress() {
 <template>
   <fieldset :disabled="busy">
     <legend>Chrome 확장 프로그램</legend>
-    <p>확장 설치: 설치 확인 필요 · 확장 연결: <strong>{{ connectionLabel(status) }}</strong></p>
+    <p>확장 설치: Chrome 확장 관리에서 확인 · 확장 연결: <strong>{{ connectionLabel(status) }}</strong></p>
     <p>Native Messaging: {{ runtime?.registrationCode ? registrationLabel(runtime.registrationCode) : '확인 필요' }}</p>
     <p class="hint">마지막 성공 시각: {{ status.lastSuccessAt ?? '없음' }}. 과거 성공은 현재 연결을 보장하지 않습니다.</p>
     <p v-if="status.lastVerifiedId" class="hint path">마지막 확인 ID {{ status.lastVerifiedId }} · 프로토콜 v1</p>
@@ -72,7 +72,7 @@ async function copyAddress() {
       <button type="button" :disabled="actionsUnavailable || !runtime?.hostAvailable || !validExtensionId(extensionId)" @click="$emit('registration', 'repair')">연결 복구/재등록</button>
       <button type="button" :disabled="actionsUnavailable || !runtime?.registeredPath" @click="$emit('registration', 'unregister')">연결 해제</button>
     </div>
-    <p v-if="!runtime?.connectionActionsAvailable" class="hint">현재는 설치 안내와 ID 저장을 제공합니다. 호스트 등록·왕복 테스트·복구·해제 기능은 아직 사용할 수 없습니다.</p>
+    <p v-if="!runtime?.connectionActionsAvailable" class="hint">앱의 등록 상태를 확인할 수 없습니다. 설정을 다시 열어 확인하세요.</p>
     <p v-if="status.phase === 'waiting'" role="status">{{ status.remainingSeconds ?? 30 }}초 안에 확장 팝업의 [연결 테스트]를 누르세요.</p>
     <p v-if="status.errorCode" role="status">{{ registrationLabel(status.errorCode) }}</p>
     <p class="hint">호스트 등록/복구는 확장 ID 저장 및 Windows 사용자별 연결 등록을 즉시 변경합니다. 일반 설정 취소는 이미 실행한 등록/해제를 되돌리지 않습니다.</p>
