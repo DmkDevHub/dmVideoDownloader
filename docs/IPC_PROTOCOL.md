@@ -100,3 +100,14 @@
 - 확장 미설치/비활성 상태는 EXE에서 직접 확정할 수 없을 수 있다. Chrome 오류가 모호하면 `연결 확인 실패`와 확인 순서를 제공한다. `EXTENSION_ID_MISMATCH`는 로컬 설정/매니페스트 비교 등 근거가 있을 때만 확정한다.
 
 추가 오류: `HOST_PATH_MISMATCH`, `REGISTRATION_FAILED`, `CONNECTION_TEST_TIMEOUT`. 구조화된 프로젝트 오류를 만들 수 없는 Chrome 호출 실패는 `HOST_START_FAILED`와 정제된 설명으로 처리하고 원인 단정을 피한다. 메시지 버전은 설치 방식 변경만으로 올리지 않는다.
+
+## 8. R3 구현 경계
+
+- 양방향 본문 상한은 UTF-8 64 KiB다. Rust는 원본 JSON의 중복 필드를 거부한다. 공통 fixture를 TypeScript와 Rust에서 검증한다. 후보 URL의 fragment·인증정보·내부 주소 표기를 차단한다. DNS와 리다이렉트는 실제 네트워크 요청을 추가하는 단계에서 검증한다.
+- Host는 실행 파일 옆 매니페스트의 단일 origin과 Chrome 호출 인자를 대조한다. 앱은 HKCU 등록 경로와 저장된 ID도 재검증한다. Named Pipe는 설치 폴더에서 도출한 이름을 쓰며 현재 사용자 SID ACL, 원격 접속 거부, 양방향 프로세스 이미지 경로와 SID 확인을 적용한다. 앱이 종료돼 있으면 Host는 APP_NOT_RUNNING을 반환한다.
+- Host와 앱 사이의 단일 파이프 연결에는 먼저 소문자 32바이트 확장 ID를 전송한다. 이후 Chrome과 동일한 길이 프레이밍을 쓴다. 앱은 각 요청의 타입, 버전, 길이와 값 범위를 다시 확인한다.
+- 앱에서 시작한 30초 대기 내에 같은 파이프와 요청 ID의 결과를 확인해야 ACK를 보낸다. 포트 종료 후 현재 성공 표시를 내리고 마지막 성공 시각과 ID를 남긴다. 이 기록과 후보는 앱 메모리에 둔다.
+- 사용자가 요청한 연결 테스트가 완료되면 확장은 별도 포트에서 빈 payload의 GET_RUNTIME_STATUS를 보낸다. 앱의 RUNTIME_STATUS에는 protocolVersion, appReachable, browserAutoDetect가 들어간다. 확장은 확인한 옵션 값만 저장한다. 새 앱 설정을 반영하려면 연결 테스트를 다시 실행한다.
+- HKCU 32·64비트 등록을 함께 확인한다. 동일 사용자의 앱 복사본 사이에는 등록 작업을 직렬화한다. 기존 등록의 소유권을 확인한 뒤 복구하며, 해제는 현재 복사본을 가리키는 기본값에 적용한다.
+
+참조 [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) · [Windows Named Pipe 접근 제어](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights) · [WOW64 레지스트리 뷰](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys)

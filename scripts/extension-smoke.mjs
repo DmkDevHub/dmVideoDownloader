@@ -168,11 +168,17 @@ try {
   assert.ok((await stateForTab()).candidates[0].pageUrl.endsWith('/next'));
   if (process.env.DM_NATIVE_APP || process.env.DM_NATIVE_HOST) {
     const candidateId = (await stateForTab()).candidates[0].candidateId;
-    const command = { type: 'DOWNLOAD_SELECTED', tabId, candidateId };
     await runChromeNativeSmoke({ root, extensionId, candidateId,
-      requestSelection: () => evaluate(popupSession, `chrome.runtime.sendMessage(${JSON.stringify(command)})`),
+      requestSelection: id => evaluate(popupSession, `chrome.runtime.sendMessage(${JSON.stringify({ type: 'DOWNLOAD_SELECTED', tabId, candidateId: id })})`),
       requestDiagnosis: () => evaluate(popupSession, 'chrome.runtime.sendMessage({type:"CONNECTION_TEST"})'),
-      waitForSettings: () => until(async () => (await stateForTab()).autoDetect === false, 'app runtime setting') });
+      waitForSettings: () => until(async () => (await stateForTab()).autoDetect === false, 'app runtime setting'),
+      refreshCandidate: async () => {
+        await evaluate(popupSession, 'chrome.storage.local.set({lastRuntimeSettings:{browserAutoDetect:true}}).then(() => true)');
+        await until(async () => (await stateForTab()).autoDetect, 'fixture detection reset');
+        await evaluate(pageSession, 'fetch("/moved.webm").then(() => true)');
+        return until(async () => (await stateForTab()).candidates.find(row => row.mediaUrl.endsWith('/moved.webm'))?.candidateId, 'moved-install candidate');
+      },
+    });
   }
   await evaluate(popupSession, 'chrome.storage.local.set({lastRuntimeSettings:{browserAutoDetect:false}}).then(() => true)');
   await until(async () => (await stateForTab()).autoDetect === false && (await stateForTab()).candidates.length === 0, 'last-confirmed auto-detect off');

@@ -15,6 +15,8 @@ pub struct RuntimeInfo {
     connection_actions_available: bool,
     registration_code: String,
     registered_path: Option<String>,
+    registry32_path: Option<String>,
+    registry64_path: Option<String>,
     configured_id: String,
     manifest_path: String,
 }
@@ -30,6 +32,10 @@ fn chrome_path() -> Option<PathBuf> {
 fn inspect(root: &Path, id: &str) -> RuntimeInfo {
     let extension = root.join("extension");
     let registry = Registry::chrome();
+    let [registry32_path, registry64_path] = registry
+        .views()
+        .unwrap_or_default()
+        .map(|entry| entry.map(|path| path.to_string_lossy().into_owned()));
     RuntimeInfo {
         configured_id: id.into(),
         manifest_path: root
@@ -55,11 +61,9 @@ fn inspect(root: &Path, id: &str) -> RuntimeInfo {
             .err()
             .unwrap_or("REGISTERED")
             .into(),
-        registered_path: registry
-            .read()
-            .ok()
-            .flatten()
-            .map(|path| path.to_string_lossy().into_owned()),
+        registered_path: registry32_path.clone().or_else(|| registry64_path.clone()),
+        registry32_path,
+        registry64_path,
     }
 }
 

@@ -93,4 +93,4 @@ Chrome Native Messaging은 **확장이 연결을 시작**한다. EXE가 등록�
 - EXE/확장 빌드 리소스/yt-dlp/FFmpeg 누락과 WebView2 의존성, 코드 서명·보안 경고, 재배포 조건: TC-13 및 릴리스 기록.
 - 수동 unpacked 설치, HKCU 경로와 정확한 `allowed_origins`는 [Chrome 설치 안내](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked), [Native Messaging 공식 규격](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)을 확인했다(2026-11-05). [Tauri 2 문서](https://v2.tauri.app/)는 실제 패키징 시 재확인한다.
 
-본 버전은 설계 개정이며 Windows/Chrome 실행 검증은 미실행이다.
+R3에서 Chrome for Testing의 임시 프로필로 실제 Host 등록·후보 전달·왕복 테스트와 앱 폴더 이동 후 복구를 검증했다. 최종 ZIP, 일반 Chrome 수동 설치 및 일반 사용자 계정 인수는 R7 범위다. [R3 검증 기록](TEST_PLAN.md#10-r3-브라우저와-windows-연결-검증-2026-11-09)

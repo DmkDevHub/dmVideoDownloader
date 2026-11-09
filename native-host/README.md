@@ -1,7 +1,7 @@
-# Windows Native Messaging Host 소스 경계
+# Windows Native Messaging Host
 
-R0-03에서 확보한 별도 Windows EXE용 폴더이다. 구현·Cargo manifest·빌드 명령은 아직 없으며 R3에서 추가한다. 데스크톱 앱과 같은 실행 파일로 합치지 않는다.
+루트에서 `npm run build:host`를 실행한다. Windows 산출물은 `shared/protocol/target/debug/VideoNativeHost.exe`이다. 개발 연결용 앱·Host·확장 폴더는 `npm run stage:connection`으로 만든다.
 
-호스트의 책임은 Chrome stdio JSON 길이 프레이밍과 사용자별 로컬 IPC 사이의 중계이다. `stdout`은 프로토콜 전용으로 유지하며 GUI·다운로드 엔진·쿠키/인증 세션 처리 기능을 넣지 않는다.
+Host는 Chrome이 전달한 origin을 자기 폴더의 단일 allowlist와 대조한다. 길이 접두어가 있는 v1 JSON을 stdin/stdout으로 교환하고, 같은 폴더의 실행 중인 Tauri 앱에 Windows Named Pipe로 중계한다. 앱이 꺼져 있으면 실행 안내를 반환한다. 등록과 해제는 앱 설정에서 한다. [IPC 계약](../docs/IPC_PROTOCOL.md)
 
-등록·연결 구현 전에 `docs/BROWSER_EXTENSION.md`, `docs/PACKAGING.md`, `docs/SETTINGS.md`, `docs/IPC_PROTOCOL.md`를 읽는다. 현재는 HKCU 등록·해제나 Chrome 연결을 수행하지 않는다. 실제 빌드 추가 시 `docs/BUILD.md`에 명령과 산출물을 기록한다.
+`npm run test:native`는 분할 프레임과 실제 Windows 프로세스의 연속 프레임·오류 처리를 확인한다. Chrome과 앱의 통합 검증 절차는 BUILD에 있다. [빌드와 검증](../docs/BUILD.md)

@@ -12,4 +12,4 @@ TypeScript 설정은 `../shared/tsconfig.base.json`을 기반으로 한다. `npm
 
 권한은 관찰용 webRequest, 문서 ID/수명 정리용 webNavigation, 세션/옵션 캐시 storage, 사용자 선택/진단용 nativeMessaging이다. HTTP(S) 호스트 접근은 자동 감지에 필요하며 Chrome 사이트별 접근 설정을 존중한다. cookies/debugger/downloads/tabs 권한과 인증정보 수집은 없다.
 
-MP4/WebM/HLS/DASH 후보·현재 탭 목록/배지, 명시 선택만 Host 전송, 실제 확장 ID/복사 및 진단 시작/결과를 구현했다. 앱 설정 실제 교환·Host 등록/왕복·다운로드는 아직 제공하지 않는다. 팝업의 안내를 따르더라도 현재 빌드에서는 앱 수신 성공을 기대하면 안 된다. ID/폴더 이동 후 실제 Chrome ID 확인·앱 재등록·왕복 테스트가 필요하다(R3/R7).
+MP4/WebM/HLS/DASH 후보를 감지하고, 사용자가 선택하면 Native Host를 통해 Windows 앱에 전달한다. 앱 설정의 연결 테스트 대기를 시작한 후 팝업에서 테스트한다. 성공 뒤 앱의 자동 감지 옵션을 읽는다. 앱 또는 확장 폴더를 이동하면 현재 위치와 실제 확장 ID를 확인해 재등록하고 다시 테스트한다. 분석과 다운로드는 R4~R5에서 추가한다.

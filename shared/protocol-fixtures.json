@@ -59,4 +59,17 @@
     "{",
     "INVALID_PAYLOAD"
   ]
+,
+  [
+    "{\"version\":1,\"type\":\"VIDEO_CANDIDATE\",\"requestId\":\"req-fragment\",\"payload\":{\"candidateId\":\"candidate-1\",\"tabId\":1,\"pageUrl\":\"https://example.org/#fragment\",\"sourceType\":\"mp4\",\"detectedAt\":\"2026-11-09T00:00:00Z\"}}",
+    "URL_NOT_ALLOWED"
+  ],
+  [
+    "{\"version\":-1,\"type\":\"PING\",\"requestId\":\"req-negative\",\"payload\":{\"purpose\":\"connection_test\"}}",
+    "INVALID_PAYLOAD"
+  ],
+  [
+    "{\"version\":1,\"type\":\"ERROR\",\"requestId\":\"req-unknown\",\"payload\":{\"code\":\"UNRECOGNIZED_ERROR\",\"safeMessage\":\"test\"}}",
+    "INVALID_PAYLOAD"
+  ]
 ]

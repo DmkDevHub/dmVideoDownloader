@@ -229,6 +229,7 @@ pub fn public_url(value: &str) -> bool {
         return false;
     };
     if !matches!(url.scheme(), "http" | "https")
+        || url.fragment().is_some()
         || !url.username().is_empty()
         || url.password().is_some()
     {

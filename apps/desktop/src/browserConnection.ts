@@ -6,6 +6,8 @@ export interface BrowserRuntime {
   connectionActionsAvailable: boolean;
   registrationCode?: string;
   registeredPath?: string | null;
+  registry32Path?: string | null;
+  registry64Path?: string | null;
   configuredId?: string;
   manifestPath?: string;
 }
@@ -31,6 +33,10 @@ export function registrationLabel(code: unknown): string {
     case 'EXTENSION_ID_MISMATCH': return 'ID 변경 · 재등록 필요';
     case 'HOST_PATH_MISMATCH': return '경로 불일치 · 재등록 필요';
     case 'REGISTRATION_CONFLICT': return '등록 소유권을 확인하세요';
+    case 'REGISTRY_VIEW_MISMATCH': return '32·64비트 등록 경로 불일치 · 연결 복구 필요';
+    case 'MACHINE_REGISTRATION_PRESENT': return '시스템 등록이 있습니다. 이 앱의 사용자 등록을 확인하세요.';
+    case 'REGISTRATION_BUSY': return '다른 복사본에서 연결 등록을 처리 중입니다. 잠시 후 다시 시도하세요.';
+    case 'REGISTRATION_UNCONFIRMED': return '등록 변경을 다시 읽어 확인하지 못했습니다. 연결 복구를 다시 시도하세요.';
     case 'INVALID_EXTENSION_ID': return 'Chrome의 실제 확장 ID를 확인하세요';
     case 'REGISTRATION_FAILED': return '등록 읽기 또는 쓰기 실패';
     case 'CONNECTION_TEST_BUSY': return '연결 테스트 응답을 기다리고 있습니다';

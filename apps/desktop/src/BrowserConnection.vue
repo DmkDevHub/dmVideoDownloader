@@ -66,6 +66,11 @@ async function copyAddress() {
       <p>이 앱의 등록 위치 {{ runtime.manifestPath }}</p>
       <p>확장 폴더도 이동했다면 새 폴더를 Chrome에서 다시 로드하고 실제 ID를 입력하세요. 연결 복구/재등록을 누르면 현재 위치로 등록합니다.</p>
     </div>
+    <div v-if="runtime?.registrationCode === 'REGISTRY_VIEW_MISMATCH'" class="hint path">
+      <p>32비트 등록 {{ runtime.registry32Path }}</p>
+      <p>64비트 등록 {{ runtime.registry64Path }}</p>
+      <p>이 앱의 등록 위치 {{ runtime.manifestPath }}</p>
+    </div>
     <div class="status-row">
       <button type="button" :disabled="actionsUnavailable || !runtime?.hostAvailable || !validExtensionId(extensionId)" @click="$emit('registration', 'register')">호스트 등록</button>
       <button type="button" :disabled="actionsUnavailable || runtime?.registrationCode !== 'REGISTERED' || extensionId !== savedId" @click="$emit('registration', 'test')">연결 테스트</button>

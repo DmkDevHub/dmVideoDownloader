@@ -117,3 +117,10 @@
 - `npm.cmd run test:extension:chrome`: PASS. `DM_MEDIA_FIXTURE`에 `D:\ai_workspace\dmVideoDownloader\.test-output\flower.mp4` 지정. 실제 unpacked MV3/격리 content script·MP4/WebM/HLS/DASH 감지·동적 소스 변경·현재 탭 팝업/배지/실제 ID·중복/세그먼트·전체/SPA 이동/종료·워커 stop/restart·off 확인. Native Host는 호출하지 않음. 진단/선택의 성공·실패 포트 상태 전이는 내부 어댑터에서 검증.
 - 실제 MP4 재생 보완: 공개 테스트 자산 `https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4`를 격리 파일로 내려받음(1,128,375바이트, SHA-256 `0cd83d944a6ca7822b4a8306cecc60a36e859b041f6702c6a1ad9ead78924451`). 로컬 fixture가 해당 바이트를 공급하고 HTMLVideoElement.play 및 currentTime 증가 PASS. 자산은 Git 제외. 테스트 실행기에 자동 다운로드 기능은 없음.
 - 미검증: WebM/HLS/DASH 실제 재생·분석/다운로드·병합, 일반 Chrome 수동 unpacked 설치·시각/클립보드 쓰기, 실제 Native Host/EXE 왕복·등록·앱 옵션 교환, 포터블 배포. R2 이후 개발은 자동 진행하지 않는다. TC별 범위는 TEST_PLAN 9절.
+
+### R3 Windows 연결 검증 (2026-11-09)
+
+- 기존 클론 개발 환경 A에서 Windows x64 MSVC로 데스크톱·Native Host·공통 프로토콜을 빌드했다. Node 24.22.1과 Chrome for Testing 157.0.8103.38을 사용했다.
+- npm run verify PASS. JS/Rust 단위 테스트 56개, 숨김 앱 스모크 4회, 실제 Host 프레이밍, Named Pipe 권한 경계와 중복 ACK, 일반 디버그 EXE/Host/확장 빌드를 확인했다.
+- DM_NATIVE_APP과 DM_NATIVE_HOST를 지정한 npm run test:extension:chrome PASS. 실제 후보 전달, 진단 ACK, 포트 종료, 앱 옵션 교환, 앱 폴더 이동 후 복구·재시험을 수행했다. DM_MEDIA_FIXTURE로 기존 공개 MP4 실제 재생도 다시 확인했다.
+- 등록 통합 테스트는 동일한 Host 이름의 기존 등록 값을 먼저 확인하고 테스트 설치 경로를 기준으로 임시 HKCU 값을 정리했다. 등록 뷰 충돌 테스트는 WOW64가 분리하는 별도 시험 키를 사용했다. 수동 설치·시각·계정/정책 검증 범위는 TEST_PLAN 10절을 따른다.

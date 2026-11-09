@@ -48,9 +48,7 @@ fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
 }
 
 pub fn canonical(path: &Path) -> io::Result<String> {
-    Ok(std::fs::canonicalize(path)?
-        .to_string_lossy()
-        .to_lowercase())
+    Ok(std::fs::canonicalize(path)?.to_string_lossy().into_owned())
 }
 fn pipe_name(root: &Path) -> io::Result<Vec<u16>> {
     let key = Sha256::digest(canonical(root)?.as_bytes());
@@ -398,5 +396,43 @@ impl Client {
             return Err(Code::InvalidPayload);
         }
         Ok(reply)
+    }
+}
+
+pub struct RegistrationGuard {
+    handle: OwnedHandle,
+    // A Win32 mutex must be released on the acquiring thread.
+    thread_bound: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+impl RegistrationGuard {
+    pub fn acquire() -> io::Result<Self> {
+        use windows_sys::Win32::{
+            Foundation::{WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT},
+            System::Threading::{CreateMutexW, WaitForSingleObject},
+        };
+        let sid = user_sid(unsafe { GetCurrentProcess() })?;
+        let name = wide(std::ffi::OsStr::new(&format!(
+            r"Global\dm-video-downloader-registration-{sid}"
+        )));
+        let handle = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+        match unsafe { WaitForSingleObject(handle.as_raw_handle(), 3000) } {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Self {
+                handle,
+                thread_bound: std::marker::PhantomData,
+            }),
+            WAIT_TIMEOUT => Err(io::ErrorKind::TimedOut.into()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+}
+impl Drop for RegistrationGuard {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Threading::ReleaseMutex(self.handle.as_raw_handle());
+        }
     }
 }

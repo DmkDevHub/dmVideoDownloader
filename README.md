@@ -3,7 +3,7 @@
 - 설계 버전: **v1.2** (2026-11-05)
 - 대상: Windows 11 개인용 브라우저 감지 기반 영상 다운로더
 - 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
-- 상태: **R0·R1 완료 / R2 Chrome 영상 후보 감지·팝업 구현 및 내부 검증**. MP4/WebM/HLS/DASH 감지와 명시 선택·연결 테스트의 확장 측 동작을 제공한다. 실제 Host/앱 왕복·다운로드와 수동 설치/시각 인수는 미검증이며 R3 이후 범위이다.
+- 상태 **R0~R3 구현 및 내부 검증 완료**. Chrome에서 선택한 영상 후보가 Native Host를 거쳐 Windows 앱에 표시된다. 영상 분석과 다운로드는 R4~R5 범위이다.
 
 ## 한눈에 보는 요구사항
 
@@ -73,7 +73,10 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 | `npm run check` | 데스크톱·확장 TypeScript 타입 검사 |
 | `npm test` | 화면 조작 없는 데스크톱·확장 Vitest 단위 테스트 |
 | `npm run test:rust` | 폴더·설정 파일·원자 교체·복구·경합·리소스 진단 테스트. 처음에는 프런트엔드 빌드 필요 |
-| `npm run verify` | 타입 검사→Vitest→숨김 네이티브 smoke→Rust 테스트→일반 디버그 빌드→확장 빌드. 실패 시 중단 |
+| `npm run verify` | 타입·단위 테스트, 숨김 앱, Host 프레임과 Windows IPC 검증, 일반 디버그 EXE와 확장 빌드 |
+| `npm run build:host` | `shared/protocol/target/debug/VideoNativeHost.exe` 빌드 |
+| `npm run test:native` | 공통 Rust 프로토콜과 실제 Host 프로세스 검증 |
+| `npm run stage:connection` | 앱·Host·확장을 빌드하고 `dist/connection-*` 새 폴더에 배치 |
 | `npm run build:extension` | Chrome unpacked 로드 대상 `extension/dist/` 생성 |
 | `npm run test:extension:chrome` | 임시 프로필의 headless Chrome for Testing에서 실제 확장 내부 검증. `DM_CHROME_BINARY` 지정 가능 |
 | `npm run build:frontend` | 타입 검사 및 Vue 번들 생성 |
@@ -96,7 +99,7 @@ Windows x64에서 Node.js 22.12 이상, Rust MSVC 타깃, Visual Studio C++ Buil
 
 손상 설정은 자동으로 덮어쓰지 않는다. 같은 설정창의 [손상 파일 백업 후 기본값 저장]을 선택하면 `data/settings.backup-*.json`에 원본을 보관한 뒤 복구한다. 미래 스키마는 저장·복구를 거부하며 호환 앱이 필요하다. 다른 앱이 설정을 변경했다면 덮어쓰지 않고 재시작을 안내한다. 앱 폴더에 쓸 수 없으면 쓰기 가능한 위치로 포터블 폴더 전체를 옮겨 실행한다.
 
-Chrome 영역은 수동 unpacked 설치 안내, 관리 주소 복사, 실제 확장 ID 입력/설정 저장 및 로컬 배포 리소스 진단을 제공한다. 경로는 실행 파일 기준이다. **앱의 호스트 등록·연결 테스트·복구·해제 버튼은 R3 구현 전까지 비활성화**되어 있다. 파일 존재나 ID 형식만으로 설치됨/연결됨을 표시하지 않는다. 개발 중에는 `npm run build:extension` 후 **`extension/dist/`**를 수동 로드한다. EXE 옆 배포 리소스 동봉은 R7 범위이므로 개발 소스와 배포 폴더를 혼동하지 않는다.
+`npm run stage:connection`으로 만든 폴더의 `VideoDownloader.exe`를 실행한다. 설정에서 설치 안내를 열고 Chrome 개발자 모드로 같은 폴더의 `extension/`을 로드한다. 팝업의 실제 ID를 앱에 입력하고 호스트를 등록한다. 앱에서 연결 테스트 대기를 시작한 뒤 30초 안에 팝업에서 연결 테스트를 실행한다. 등록 경로와 연결 성공 여부는 앱 설정에서 따로 확인할 수 있다.
 
 데스크톱 smoke는 `.test-output/smoke-*`의 격리 데이터만 사용한다. 사용자 설정·다운로드 폴더와 레지스트리를 변경하지 않고 사용자 Chrome/탐색기/폴더 선택창을 실행하지 않는다. 별도 확장 검증은 아래 headless Chrome for Testing을 사용한다. 시각적 배치와 실제 OS 선택창 조작은 미검증이며 상세 범위는 [테스트 기록](docs/TEST_PLAN.md)을 따른다.
 
@@ -104,6 +107,6 @@ Chrome 영역은 수동 unpacked 설치 안내, 관리 주소 복사, 실제 확
 
 `extension/dist`의 확장은 HTTP(S) 요청 메타데이터와 HTML5 video/source를 관찰한다. `webRequest`, `webNavigation`, `storage`, `nativeMessaging`만 사용하며 cookies/debugger/downloads/tabs 권한은 없다. Chrome의 사이트 접근 제한을 존중한다. 후보는 현재 세션에만 저장하고 탭 이동/종료 때 지운다. 알려진 세그먼트·인증 URL은 제외하지만 모든 광고/분할 미디어/인증 URL 구조를 판별한다고 보장하지 않는다.
 
-팝업은 현재 탭 목록·배지, 화질/보호 여부 미확인, 실제 확장 ID/복사, 연결 설정 안내를 제공한다. 다운로드 선택만 후보 전달을 시작한다. 연결 테스트는 30초 PING/PONG→결과 확인/ACK 계약이며 실제 Host/앱은 아직 없으므로 현재 연결 성공을 기대하면 안 된다. 테스트가 성공해도 포트는 닫고 마지막 성공 시각과 현재 확인 필요 상태를 구분한다. 앱 자동 감지 설정 교환도 R3 이전에는 동기화 대기로 표시한다.
+팝업은 현재 탭 목록과 배지, 실제 확장 ID와 연결 테스트를 제공한다. 사용자가 다운로드를 선택하면 앱의 후보 목록에 항목이 나타난다. 앱이 꺼져 있으면 먼저 실행하라는 안내가 표시된다. 테스트 포트가 닫히면 앱과 팝업은 마지막 성공 시각을 표시한다. 앱의 자동 감지 설정을 바꾼 뒤에는 연결 테스트를 다시 실행해 확장에 반영한다.
 
-Chrome 내부 검증은 공식 Chrome for Testing을 `DM_CHROME_BINARY`로 지정해 실행한다. 임시 `.test-output/extension-*` 프로필·로컬 HTTP fixture·테스트 전용 호스트 매핑을 사용하고 화면 클릭/입력 없이 워커·문서·팝업 DOM·배지·상태 전이만 검사한다. 일반 사용자 Chrome 프로필/정책/레지스트리는 변경하지 않는다. 실제 영상 재생·수동 설치·시각적 배치는 이 검증으로 대체하지 않는다.
+Chrome 내부 검증은 Chrome for Testing의 임시 프로필에서 실행한다. 기본 검증은 확장 감지와 팝업을 확인한다. R3 통합 모드는 사용 중인 동일 Host 등록이 없는 환경에서 임시 HKCU 등록을 만들고, 실제 후보 전달과 진단을 수행한 후 해제한다. 앱 폴더를 옮겨 재등록한 뒤에도 왕복을 다시 확인한다. 일반 Chrome의 수동 설치와 화면 인수는 별도로 남아 있다. [빌드 및 검증 절차](docs/BUILD.md)

@@ -26,10 +26,10 @@ pub fn local_absolute(path: &Path) -> bool {
             .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
 }
 pub fn same_path(left: &Path, right: &Path) -> bool {
-    if left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase() {
-        return true;
+    match (crate::pipe::canonical(left), crate::pipe::canonical(right)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => left.as_os_str().eq_ignore_ascii_case(right.as_os_str()),
     }
-    matches!((crate::pipe::canonical(left), crate::pipe::canonical(right)), (Ok(a), Ok(b)) if a == b)
 }
 impl Manifest {
     pub fn new(root: &Path, id: &str) -> Result<Self, Code> {

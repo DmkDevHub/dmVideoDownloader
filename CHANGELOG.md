@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-09] verify ownership and repair across Windows registry views
+
+- TC-19/20 PASS. 실제 WOW64 분리 키에서 양쪽 등록 충돌, 소유 뷰만 해제, 다른 복사본·별도 값 보존, 명시 복구·반복 등록 확인. 설치 위치를 옮긴 뒤 실제 Chrome 왕복과 설정 교환 재검증 및 임시 HKCU 정리 PASS. npm run verify 단위 56개·숨김 앱 4회·프로세스 검사·빌드 PASS. 별도 Windows 사용자와 조직 정책, 수동 설치·시각 인수는 미검증.
+
 ## 2026-11-09 — [R3-08] diagnose registration and connection failures
 
 - TC-09/18/20 진단 부분 PASS. 격리 HKCU에서 매니페스트/Host 누락 구분과 매니페스트 복구, 실제 Host 프로세스에서 미등록·앱 종료·ID/프로토콜 불일치 확인. 설정 저장·재열기 후 진단 갱신, 대기 중 등록 변경 감지. Chrome 활성화·정책 여부는 관리 화면 안내로 남김. Rust 12개·Vitest 40개 PASS.

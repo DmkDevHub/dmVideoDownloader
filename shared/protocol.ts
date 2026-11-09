@@ -8,6 +8,13 @@ const id = (value: unknown): boolean => typeof value === 'string' && /^[A-Za-z0-
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const fields = (value: Record<string, unknown>, allowed: string[]) => Object.keys(value).every(key => allowed.includes(key));
 const string = (value: unknown, max: number) => typeof value === 'string' && Array.from(value).length <= max && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+const uint32 = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+const wireUrl = (value: unknown) => typeof value === 'string' && !value.includes('#') && !!publicUrl(value);
+const errorCodes = new Set([
+  'INVALID_PAYLOAD', 'UNSUPPORTED_VERSION', 'URL_NOT_ALLOWED', 'HOST_NOT_REGISTERED', 'HOST_START_FAILED',
+  'HOST_PATH_MISMATCH', 'EXTENSION_ID_MISMATCH', 'APP_NOT_RUNNING', 'APP_LAUNCH_FAILED', 'IPC_TIMEOUT',
+  'CONNECTION_TEST_TIMEOUT', 'CONNECTION_TEST_NOT_WAITING', 'DOWNLOAD_ENGINE_UNAVAILABLE', 'REGISTRATION_FAILED',
+]);
 function timestamp(value: unknown): boolean {
   if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/iu.test(value)) return false;
   const day = new Date(value.slice(0, 10) + 'T00:00:00Z');
@@ -16,7 +23,7 @@ function timestamp(value: unknown): boolean {
 
 export function validateEnvelope(value: unknown): ValidationError | null {
   if (!record(value) || !fields(value, ['version', 'type', 'requestId', 'payload']) ||
-    !Number.isInteger(value.version) || !id(value.requestId) || !record(value.payload)) return 'INVALID_PAYLOAD';
+    !uint32(value.version) || !id(value.requestId) || !record(value.payload)) return 'INVALID_PAYLOAD';
   if (value.version !== 1) return 'UNSUPPORTED_VERSION';
   if (new TextEncoder().encode(JSON.stringify(value)).length > MAX_BYTES) return 'INVALID_PAYLOAD';
   const p = value.payload;
@@ -27,12 +34,12 @@ export function validateEnvelope(value: unknown): ValidationError | null {
         id(p.candidateId) && typeof p.tabId === 'number' && Number.isInteger(p.tabId) && p.tabId >= 0 && p.tabId <= 0x7fffffff &&
         (p.pageTitle == null || string(p.pageTitle, 200)) && timestamp(p.detectedAt) &&
         typeof p.sourceType === 'string' && ['mp4', 'webm', 'hls', 'dash', 'unknown'].includes(p.sourceType);
-      if (valid && (!publicUrl(p.pageUrl) || (p.mediaUrl != null && !publicUrl(p.mediaUrl)))) return 'URL_NOT_ALLOWED';
+      if (valid && (!wireUrl(p.pageUrl) || (p.mediaUrl != null && !wireUrl(p.mediaUrl)))) return 'URL_NOT_ALLOWED';
       break;
     case 'PING': valid = fields(p, ['purpose']) && p.purpose === 'connection_test'; break;
     case 'PONG':
     case 'RUNTIME_STATUS':
-      if (p.protocolVersion !== 1 && Number.isInteger(p.protocolVersion)) return 'UNSUPPORTED_VERSION';
+      if (p.protocolVersion !== 1 && uint32(p.protocolVersion)) return 'UNSUPPORTED_VERSION';
       valid = p.protocolVersion === 1 && typeof p.appReachable === 'boolean' &&
         (value.type === 'PONG' ? fields(p, ['protocolVersion', 'appReachable']) :
           fields(p, ['protocolVersion', 'appReachable', 'browserAutoDetect']) && typeof p.browserAutoDetect === 'boolean');
@@ -40,7 +47,7 @@ export function validateEnvelope(value: unknown): ValidationError | null {
     case 'CONNECTION_TEST_RESULT': valid = fields(p, ['success']) && p.success === true; break;
     case 'ACK': valid = fields(p, ['accepted', 'candidateId']) && typeof p.accepted === 'boolean' && (p.candidateId == null || id(p.candidateId)); break;
     case 'GET_RUNTIME_STATUS': valid = Object.keys(p).length === 0; break;
-    case 'ERROR': valid = fields(p, ['code', 'safeMessage']) && typeof p.code === 'string' && /^[A-Z_]{1,64}$/u.test(p.code) && string(p.safeMessage, 256); break;
+    case 'ERROR': valid = fields(p, ['code', 'safeMessage']) && typeof p.code === 'string' && errorCodes.has(p.code) && string(p.safeMessage, 256); break;
     default: valid = false;
   }
   return valid ? null : 'INVALID_PAYLOAD';

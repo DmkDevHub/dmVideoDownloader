@@ -28,6 +28,8 @@ type Runtime = Pick<typeof chrome.runtime, 'connectNative'> & Partial<Pick<typeo
 export function nativeTransaction(runtime: Runtime, initial: Envelope, timeout: number,
   receive: (message: Envelope, send: (message: Envelope) => void) => NativeResult | undefined,
   timeoutCode = 'IPC_TIMEOUT'): Promise<NativeResult> {
+  const invalid = validateEnvelope(initial);
+  if (invalid) return Promise.resolve(failure(invalid));
   return new Promise(resolve => {
     let done = false;
     let port: chrome.runtime.Port;

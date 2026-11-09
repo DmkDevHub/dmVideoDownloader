@@ -115,9 +115,12 @@ onMounted(async () => {
         const recovered = await invoke<SettingsSnapshot>('recover_settings');
         smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
         applySnapshot(recovered);
-      } else if (phase === 'bridge' || phase === 'chrome-bridge') {
-        if (phase === 'chrome-bridge') {
-          await invoke('browser_register', { extensionId: snapshot.settings.browserExtensionId });
+      } else if (phase === 'bridge' || phase === 'chrome-move-from' || phase === 'chrome-move-to') {
+        const chromeTest = phase !== 'bridge';
+        if (chromeTest) {
+          const repair = phase === 'chrome-move-to';
+          if (repair && runtime.value?.registrationCode !== 'HOST_PATH_MISMATCH') throw new Error('HOST_PATH_MISMATCH');
+          await invoke('browser_register', { extensionId: snapshot.settings.browserExtensionId, repair });
           runtime.value = await invoke<BrowserRuntime>('browser_runtime');
           if (runtime.value.registrationCode !== 'REGISTERED') throw new Error('REGISTRATION_FAILED');
           connection.value = await invoke<ConnectionStatus>('browser_begin_test');
@@ -127,20 +130,21 @@ onMounted(async () => {
           await refreshCandidates();
           await nextTick();
           smokePassed = await invoke<boolean>('smoke_bridge_received') && document.querySelectorAll('[data-received-candidate]').length === 1;
-          if (phase === 'chrome-bridge') {
+          if (chromeTest) {
             await refreshConnection();
             smokePassed = smokePassed && connection.value.phase === 'disconnected' && !!connection.value.lastSuccessAt;
           }
           if (!smokePassed) await new Promise(resolve => setTimeout(resolve, 100));
         }
-        if (phase === 'chrome-bridge') {
+        if (phase === 'chrome-move-to') {
           await invoke('browser_unregister');
           runtime.value = await invoke<BrowserRuntime>('browser_runtime');
         }
       } else if (phase === 'future') {
         smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
       }
-      smokePassed = smokePassed && runtime.value?.connectionActionsAvailable === true && runtime.value.registrationCode !== 'REGISTERED';
+      smokePassed = smokePassed && runtime.value?.connectionActionsAvailable === true &&
+        (phase === 'chrome-move-from' ? runtime.value.registrationCode === 'REGISTERED' : runtime.value.registrationCode !== 'REGISTERED');
       // Exercise the internal model in a hidden WebView, without clicks or keyboard events.
       editor.value?.open();
       await nextTick();

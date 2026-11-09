@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { join, resolve } from 'node:path';
 
 const [appBinary, hostBinary] = process.argv.slice(2);
@@ -17,7 +19,8 @@ writeFileSync(join(root, 'data/settings.json'), JSON.stringify({ schemaVersion: 
   browserAutoDetect: true, browserExtensionId: 'a'.repeat(32), completionNotification: true }));
 writeFileSync(join(root, 'native-host-manifest.json'), JSON.stringify({ name: 'com.browser_video_downloader.host',
   description: 'Browser Video Downloader bridge', path: host, type: 'stdio', allowed_origins: ['chrome-extension://' + 'a'.repeat(32) + '/'] }));
-const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env, DM_SMOKE_ROOT: root, DM_SMOKE_PHASE: 'bridge' } });
+const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env,
+  WEBVIEW2_USER_DATA_FOLDER: join(root, 'webview-test'), DM_SMOKE_ROOT: root, DM_SMOKE_PHASE: 'bridge' } });
 let stdout = ''; app.stderr.resume();
 app.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
 const exit = new Promise((done, reject) => { app.on('error', reject); app.on('exit', done); });
@@ -29,18 +32,47 @@ const message = { version: 1, type: 'VIDEO_CANDIDATE', requestId: 'bridge-smoke'
 const data = Buffer.from(JSON.stringify(message));
 const prefix = Buffer.alloc(4);
 prefix.writeUInt32LE(data.length);
+const frame = Buffer.concat([prefix, data]);
+const windowsPath = '\\\\?\\' + realpathSync(root);
+const pipe = '\\\\.\\pipe\\dm-video-downloader-' + createHash('sha256').update(windowsPath).digest('hex');
+function probeOtherClient() {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(pipe);
+    let connected = false;
+    let bytes = 0;
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error('Unauthorized pipe client remained connected')); }, 2000);
+    socket.on('connect', () => { connected = true; socket.write(Buffer.concat([Buffer.from('a'.repeat(32)), frame])); });
+    socket.on('data', chunk => { bytes += chunk.length; });
+    socket.on('error', error => {
+      if (!connected && !['ENOENT', 'EBUSY'].includes(error.code)) reject(error);
+    });
+    socket.on('close', () => { clearTimeout(timer); resolve({ connected, bytes }); });
+  });
+}
 try {
+  let rejected = false;
+  for (let attempt = 0; attempt < 30 && !rejected; attempt++) {
+    const probe = await probeOtherClient();
+    assert.equal(probe.bytes, 0);
+    rejected = probe.connected;
+    if (!rejected) await pause(50);
+  }
+  assert.ok(rejected, 'Untrusted client did not reach the pipe');
   let received = false;
   for (let attempt = 0; attempt < 15 && !received; attempt++) {
     const reply = spawnSync(host, ['chrome-extension://' + 'a'.repeat(32) + '/'], {
-      windowsHide: true, input: Buffer.concat([prefix, data]), timeout: 8000,
+      windowsHide: true, input: Buffer.concat([frame, frame]), timeout: 8000,
     });
     assert.equal(reply.status, 0);
-    assert.equal(reply.stdout.readUInt32LE(), reply.stdout.length - 4);
-    const result = JSON.parse(reply.stdout.subarray(4).toString('utf8'));
+    const firstLength = reply.stdout.readUInt32LE();
+    const result = JSON.parse(reply.stdout.subarray(4, 4 + firstLength).toString('utf8'));
+    const tail = reply.stdout.subarray(4 + firstLength);
+    assert.equal(tail.readUInt32LE(), tail.length - 4);
+    const repeated = JSON.parse(tail.subarray(4).toString('utf8'));
     assert.equal(result.requestId, message.requestId);
     if (result.type === 'ACK') {
       assert.deepEqual(result.payload, { accepted: true, candidateId: 'bridge-row' });
+      assert.deepEqual(repeated, result);
       received = true;
     } else {
       assert.ok(['APP_NOT_RUNNING', 'IPC_TIMEOUT'].includes(result.payload.code), result.payload.code);
@@ -51,5 +83,5 @@ try {
   writeFileSync(join(root, 'bridge-ack'), 'bridge-row');
   assert.equal(await exit, 0);
   assert.match(stdout, /SMOKE_PASS:/u);
-  console.log('NATIVE_BRIDGE_PASS: native host -> verified Windows pipe -> mounted desktop -> ACK');
+  console.log('NATIVE_BRIDGE_PASS: verified Windows pipe, untrusted process rejection, candidate row, repeat ACK');
 } finally { if (app.exitCode === null) app.kill(); }

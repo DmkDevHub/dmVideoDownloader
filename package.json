@@ -16,6 +16,10 @@
     "build:extension": "npm run build --workspace @dm-video/extension",
     "test:extension:chrome": "node scripts/extension-smoke.mjs",
     "test:rust": "cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib",
-    "verify": "npm run check && npm test && npm run smoke && npm run test:rust && npm run build:debug && npm run build:extension"
+    "build:host": "cargo build --locked --manifest-path native-host/Cargo.toml --target-dir shared/protocol/target",
+    "test:native": "cargo test --locked --manifest-path shared/protocol/Cargo.toml && npm run build:host && node scripts/native-frame-smoke.mjs shared/protocol/target/debug/VideoNativeHost.exe",
+    "test:bridge": "node scripts/native-bridge-smoke.mjs apps/desktop/src-tauri/target/debug/dm-video-desktop.exe shared/protocol/target/debug/VideoNativeHost.exe",
+    "stage:connection": "npm run build:debug && npm run build:host && npm run build:extension && node scripts/stage-connection.mjs",
+    "verify": "npm run check && npm test && npm run smoke && npm run test:rust && npm run test:native && npm run test:bridge && npm run build:debug && npm run build:extension"
   }
 }
