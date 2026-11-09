@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R5-03] merge validated video and audio streams with FFmpeg
+
+- TC-05/07 엔진 검증. 실제 공개 Sintel DASH에서 720p 상한 이하 546p 영상과 별도 음성 스트림을 받아 FFmpeg로 MP4 스트림 복사 병합하고 두 트랙을 디코딩했다. 공개 단일 MP4 디코딩과 포맷 선택 등 다운로드 테스트 5개 PASS. FFmpeg는 로컬 작업 파일만 읽는다. Chrome 감지부터 재생까지의 릴리스 인수와 세그먼트 전송은 별도 범위이다.
+
 ## 2026-11-09 — [R5-02] apply best and capped video quality settings
 
 - TC-07 선택 정책 검증. 최고 및 2160p·1080p·720p 상한, 정확히 일치하는 포맷이 없을 때 상한 이하 선택, 높이 미확인/초과만 있는 경우의 안내를 테스트했다. 실제 공개 Sintel DASH 메타데이터의 최고와 720p 상한 선택을 비교했다. 공개 MP4 저장·디코딩 회귀 PASS. 화질을 바꾼 실제 DASH 파일은 R5-03에서 검증한다.

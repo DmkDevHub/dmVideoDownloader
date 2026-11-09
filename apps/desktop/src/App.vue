@@ -271,7 +271,7 @@ onMounted(async () => {
         <tr v-if="downloadTitle" data-download-row>
           <td>{{ downloadTitle }}</td><td>{{ savedVideo?.height ? savedVideo.height + 'p' : '미확인' }}</td>
           <td>{{ savedVideo ? '100%' : progressLabel(downloadProgress) }}</td>
-          <td role="status">{{ downloading ? (downloadProgress ? '다운로드 중' : '영상 확인 중') : savedVideo ? '완료' : '실패' }}</td>
+          <td role="status">{{ downloading ? (downloadProgress?.merging ? '파일 처리 중' : downloadProgress ? '다운로드 중' : '영상 확인 중') : savedVideo ? '완료' : '실패' }}</td>
           <td>{{ savedVideo?.filename ?? '—' }}</td>
         </tr>
         <tr v-else><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr>

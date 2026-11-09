@@ -1,5 +1,5 @@
 pub(crate) mod process;
-mod tools;
+pub(crate) mod tools;
 
 #[tauri::command]
 pub async fn tool_diagnostics(

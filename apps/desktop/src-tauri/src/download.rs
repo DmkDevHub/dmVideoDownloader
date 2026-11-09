@@ -1,14 +1,15 @@
-use crate::analysis::{extract, failure, process, proxy};
+use crate::analysis::{extract, failure, process, proxy, tools};
 use crate::{
     bridge::Bridge,
     folders,
-    settings::{Quality, Settings, Store},
+    settings::{Format as Container, Quality, Settings, Store},
 };
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
+    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -41,6 +42,7 @@ pub struct Progress {
     downloaded: u64,
     total: Option<u64>,
     bytes_per_second: Option<f64>,
+    merging: bool,
 }
 
 fn progress(line: &[u8]) -> Option<Progress> {
@@ -60,6 +62,7 @@ fn progress(line: &[u8]) -> Option<Progress> {
             .or(estimate)
             .filter(|total| *total >= downloaded && *total > 0),
         bytes_per_second,
+        merging: false,
     })
 }
 
@@ -115,7 +118,7 @@ fn download(
     settings: &Settings,
     page: &str,
     media: Option<&str>,
-    update: impl FnMut(Progress) + Send + 'static,
+    update: impl Fn(Progress) + Send + Sync + 'static,
 ) -> Result<Saved, &'static str> {
     let analyzer = extract::Analyzer::open(root)?;
     let report = extract::candidate(page, media, |address| analyzer.analyze(address))?;
@@ -125,10 +128,8 @@ fn download(
                 format.tracks,
                 extract::Tracks::AudioVideo | extract::Tracks::VideoOnly | extract::Tracks::Unknown
             ) && matches!(format.container.as_deref(), Some("mp4" | "webm"))
-                && format
-                    .media
-                    .as_ref()
-                    .is_some_and(|media| matches!(media.protocol.as_str(), "http" | "https"))
+                && direct_transfer(format)
+                && (settings.format != Container::Mp4 || format.container.as_deref() == Some("mp4"))
         }),
         &settings.quality,
     )?;
@@ -136,14 +137,67 @@ fn download(
         .container
         .as_deref()
         .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
+    let audio = if format.tracks == extract::Tracks::VideoOnly {
+        report
+            .formats
+            .iter()
+            .filter(|candidate| {
+                candidate.tracks == extract::Tracks::AudioOnly
+                    && direct_transfer(candidate)
+                    && matches!(candidate.container.as_deref(), Some("m4a" | "webm"))
+                    && (settings.format != Container::Mp4
+                        || candidate.container.as_deref() == Some("m4a"))
+            })
+            .max_by_key(|candidate| (same_family(ext, candidate), candidate.bitrate.unwrap_or(0)))
+    } else {
+        None
+    };
+    if settings.format == Container::Mp4
+        && audio.is_none()
+        && format.tracks == extract::Tracks::VideoOnly
+        && report.formats.iter().any(|candidate| {
+            candidate.tracks == extract::Tracks::AudioOnly && direct_transfer(candidate)
+        })
+    {
+        return Err("CONTAINER_INCOMPATIBLE");
+    }
+    let output_ext = match settings.format {
+        Container::Mp4 => "mp4",
+        Container::Mkv => "mkv",
+        Container::Auto if audio.is_some_and(|audio| !same_family(ext, audio)) => "mkv",
+        Container::Auto => ext,
+    };
+    let ffmpeg = ffmpeg(root)?;
     let directory = folders::validate_directory(&settings.download_directory)?;
     let staging = tempfile::Builder::new()
         .prefix(".dm-video-")
         .tempdir_in(&directory)
         .map_err(|_| "DIRECTORY_NOT_WRITABLE")?;
-    let path = staging.path().join(format!("source.{ext}"));
-    transfer(&analyzer, format, &path, update)?;
-    let filename = format!("video.{ext}");
+    let video = staging.path().join(format!("source.{ext}"));
+    let update = Arc::new(update);
+    let video_update = Arc::clone(&update);
+    transfer(&analyzer, format, &video, move |value| video_update(value))?;
+    let audio_file = audio
+        .map(|audio| -> Result<PathBuf, &'static str> {
+            let ext = audio
+                .container
+                .as_deref()
+                .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
+            let file = staging.path().join(format!("audio.{ext}"));
+            let audio_update = Arc::clone(&update);
+            transfer(&analyzer, audio, &file, move |value| audio_update(value))?;
+            Ok(file)
+        })
+        .transpose()?;
+    update(Progress {
+        downloaded: 0,
+        total: None,
+        bytes_per_second: None,
+        merging: true,
+    });
+    let path = staging.path().join(format!("finished.{output_ext}"));
+    remux(&ffmpeg, &video, audio_file.as_deref(), &path)?;
+    let filename = format!("video.{output_ext}");
     move_without_replacing(&path, &directory.join(&filename)).map_err(|error| {
         if error.kind() == io::ErrorKind::AlreadyExists {
             "DOWNLOAD_EXISTS"
@@ -155,6 +209,77 @@ fn download(
         filename,
         height: format.height,
     })
+}
+
+fn direct_transfer(format: &extract::Format) -> bool {
+    format
+        .media
+        .as_ref()
+        .is_some_and(|media| matches!(media.protocol.as_str(), "http" | "https"))
+}
+
+fn same_family(video_ext: &str, audio: &extract::Format) -> bool {
+    matches!(
+        (video_ext, audio.container.as_deref()),
+        ("mp4", Some("m4a")) | ("webm", Some("webm"))
+    )
+}
+
+fn ffmpeg(root: &Path) -> Result<PathBuf, &'static str> {
+    let tool = tools::Tool::Ffmpeg;
+    match tools::probe(root, tool).state {
+        tools::State::Ready => tools::executable(root, tool).map_err(|_| "FFMPEG_FAILED"),
+        tools::State::Missing => Err("FFMPEG_MISSING"),
+        tools::State::Unsupported => Err("FFMPEG_UNSUPPORTED"),
+        _ => Err("FFMPEG_FAILED"),
+    }
+}
+
+fn remux(
+    ffmpeg: &Path,
+    video: &Path,
+    audio: Option<&Path>,
+    output: &Path,
+) -> Result<(), &'static str> {
+    let mut command = Command::new(ffmpeg);
+    command.args(["-nostdin", "-v", "error", "-xerror", "-n"]);
+    for input in [Some(video), audio].into_iter().flatten() {
+        folders::check_path(input)?;
+        let demuxer = match input.extension().and_then(|ext| ext.to_str()) {
+            Some("mp4" | "m4a") => "mov",
+            Some("webm") => "matroska",
+            _ => return Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
+        };
+        command
+            .args(["-protocol_whitelist", "file", "-f", demuxer, "-i"])
+            .arg(input);
+    }
+    command
+        .args([
+            "-map",
+            "0:V:0",
+            "-map",
+            if audio.is_some() { "1:a:0" } else { "0:a:0?" },
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
+            "-c",
+            "copy",
+        ])
+        .arg(output);
+    let result = process::run(&mut command, TRANSFER_TIMEOUT, 4096, 64 * 1024).map_err(
+        |error| match error {
+            process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
+            _ => "FFMPEG_FAILED",
+        },
+    )?;
+    if !result.success
+        || !fs::metadata(output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    {
+        return Err("CONTAINER_INCOMPATIBLE");
+    }
+    Ok(())
 }
 
 fn choose_video<'a>(
@@ -198,14 +323,15 @@ fn transfer(
         "url": media.url.as_str(),
         "protocol": media.protocol,
         "ext": format.container,
-        "vcodec": format.video_codec,
         "acodec": format.audio_codec,
+        "format_id": "approved",
+        "vcodec": if format.tracks == extract::Tracks::AudioOnly { Some("none") } else { format.video_codec.as_deref() },
     }))
     .map_err(|_| "DOWNLOAD_FAILED")?;
     let mut command = analyzer.command(&proxy);
     let template = path.to_str().ok_or("INVALID_DIRECTORY")?.replace('%', "%%");
     command.args([
-        "--load-info-json", "-", "--downloader", "native", "--fixup", "never",
+        "--load-info-json", "-", "--format", "approved", "--downloader", "native", "--fixup", "never",
         "--no-mtime", "--newline", "--progress", "--progress-delta", "0.25",
         "--progress-template", "download:DM_PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s",
         "--output", &template,
@@ -276,6 +402,7 @@ mod tests {
             height,
             video_codec: None,
             audio_codec: None,
+            bitrate: None,
             tracks,
             media: None,
         };
@@ -369,22 +496,48 @@ mod tests {
         )
         .unwrap();
         let file = output.path().join(result.filename);
-        assert_eq!(fs::metadata(&file).unwrap().len(), 1_128_375);
+        assert!(fs::metadata(&file).unwrap().len() > 0);
         assert!(receive
             .try_iter()
             .any(|value| value.downloaded > 0 && value.total.is_some()));
         assert_eq!(fs::read_dir(output.path()).unwrap().count(), 1);
-        decode(&root, &file);
+        decode(&root, &file, false);
         println!("MP4_DOWNLOAD_AND_DECODE_PASS");
     }
 
-    fn decode(root: &Path, file: &Path) {
-        use std::process::Command;
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_dash_merges_capped_video_and_audio() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let output = tempfile::tempdir().unwrap();
+        let mut settings = Settings::defaults(output.path().to_str().unwrap().into());
+        settings.quality = Quality::Q720;
+        settings.format = Container::Mp4;
+        let result = download(
+            &root,
+            &settings,
+            "https://storage.googleapis.com/shaka-demo-assets/sintel/dash.mpd",
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(result.height, Some(546));
+        assert!(result.filename.ends_with(".mp4"));
+        decode(&root, &output.path().join(result.filename), true);
+        println!("DASH_DOWNLOAD_AND_MERGE_PASS: 546p with audio");
+    }
+
+    fn decode(root: &Path, file: &Path, audio: bool) {
+        let mut command = Command::new(root.join("tools/ffmpeg.exe"));
+        command
+            .args(["-nostdin", "-v", "error", "-xerror", "-i"])
+            .arg(file)
+            .args(["-map", "0:V:0"]);
+        if audio {
+            command.args(["-map", "0:a:0"]);
+        }
         let output = process::run(
-            Command::new(root.join("tools/ffmpeg.exe"))
-                .args(["-nostdin", "-v", "error", "-xerror", "-i"])
-                .arg(file)
-                .args(["-map", "0:v:0", "-f", "null", "-"]),
+            command.args(["-f", "null", "-"]),
             Duration::from_secs(30),
             4096,
             4096,

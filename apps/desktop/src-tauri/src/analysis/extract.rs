@@ -26,6 +26,8 @@ struct RawFormat {
     url: Option<String>,
     manifest_url: Option<String>,
     protocol: Option<String>,
+    abr: Option<f64>,
+    tbr: Option<f64>,
     ext: Option<String>,
     width: Option<i64>,
     height: Option<i64>,
@@ -46,6 +48,8 @@ pub struct Format {
     pub tracks: Tracks,
     #[serde(skip)]
     pub media: Option<Media>,
+    #[serde(skip)]
+    pub bitrate: Option<u32>,
 }
 
 pub struct Media {
@@ -118,6 +122,11 @@ fn normalize(raw: RawFormat) -> Option<Format> {
         video_codec: video.name(),
         audio_codec: audio.name(),
         tracks,
+        bitrate: raw
+            .abr
+            .or(raw.tbr)
+            .filter(|rate| rate.is_finite() && *rate > 0.0)
+            .map(|rate| rate as u32),
         media: raw
             .url
             .as_deref()
