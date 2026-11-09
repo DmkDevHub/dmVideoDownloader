@@ -60,6 +60,13 @@ test('connection test uses one port and one fresh ID for PING/PONG/result/ACK; n
   expect(nextPort.postMessage.mock.calls[0][0].requestId).not.toBe(ping.requestId);
   nextPort.onDisconnect.emit(); await next;
 });
+test('Chrome missing-host disconnect gets the registration guidance', async () => {
+  const port = fakePort();
+  const result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port,
+    lastError: { message: 'Specified native messaging host not found.' } });
+  port.onDisconnect.emit();
+  expect(await result).toMatchObject({ ok: false, code: 'HOST_NOT_REGISTERED' });
+});
 test('diagnostic rejects ACK before PONG, wrong ID, app-unreachable and protocol mismatch', async () => {
   for (const scenario of ['early-ack', 'wrong-id', 'unreachable', 'protocol']) {
     const port = fakePort(), result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port });

@@ -41,7 +41,11 @@ export function nativeTransaction(runtime: Runtime, initial: Envelope, timeout: 
     };
     try {
       port = runtime.connectNative(HOST_NAME);
-      port.onDisconnect.addListener(() => { void runtime.lastError; if (!done) finish(failure('HOST_START_FAILED')); });
+      port.onDisconnect.addListener(() => {
+        const message = runtime.lastError?.message;
+        if (!done) finish(failure(message === 'Specified native messaging host not found.'
+          ? 'HOST_NOT_REGISTERED' : 'HOST_START_FAILED'));
+      });
       port.onMessage.addListener((input: unknown) => {
         if (done) return;
         try {

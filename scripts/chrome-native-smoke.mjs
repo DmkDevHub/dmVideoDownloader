@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 const hostKey = String.raw`Software\Google\Chrome\NativeMessagingHosts\com.browser_video_downloader.host`;
@@ -13,7 +13,7 @@ const owned = (result, path) => hasValues(result) && result.stdout.split(/\r?\n/
   line.includes('REG_SZ') && line.trimEnd().endsWith(path));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function verifyInstall(stage, phase, { requestSelection, requestDiagnosis, waitForSettings }, candidateId) {
+async function verifyInstall(stage, phase, { extensionId, requestSelection, requestDiagnosis, waitForSettings }, candidateId) {
   const manifest = join(stage, 'native-host-manifest.json');
   const app = spawn(join(stage, 'VideoDownloader.exe'), [], { windowsHide: true, env: { ...process.env,
     WEBVIEW2_USER_DATA_FOLDER: join(dirname(stage), basename(stage) + '-webview'), DM_SMOKE_ROOT: stage, DM_SMOKE_PHASE: phase } });
@@ -29,6 +29,9 @@ async function verifyInstall(stage, phase, { requestSelection, requestDiagnosis,
     const deadline = Date.now() + 9000;
     while (Date.now() < deadline && exited === undefined && !owned(query('HKCU', views[0]), manifest)) await pause(80);
     assert.ok(existsSync(manifest) && owned(query('HKCU', views[0]), manifest), 'Desktop did not register the isolated Host.');
+    const nativeManifest = JSON.parse(readFileSync(manifest, 'utf8'));
+    assert.equal(realpathSync(nativeManifest.path), join(stage, 'VideoNativeHost.exe'));
+    assert.deepEqual(nativeManifest.allowed_origins, ['chrome-extension://' + extensionId + '/']);
     const result = await requestSelection(candidateId);
     assert.equal(result.code, 'ACK');
     assert.equal(result.ok, true);
@@ -84,7 +87,9 @@ export async function runChromeNativeSmoke(options) {
     const nextCandidate = await refreshCandidate();
     await verifyInstall(moved, 'chrome-move-to', options, nextCandidate);
     for (const view of views) assert.ok(!hasValues(query('HKCU', view)), 'Temporary registration was not removed.');
-    console.log('CHROME_NATIVE_PASS: selection, app row, diagnostic ACK/disconnect, settings, moved-folder repair and repeated round trip');
+    const disconnected = await options.requestDiagnosis();
+    assert.equal(disconnected.code, 'HOST_NOT_REGISTERED');
+    console.log('CHROME_NATIVE_PASS: exact allowlist, candidate delivery, diagnostic ACK, moved-folder repair and deregistration');
   } finally {
     for (const view of views) {
       if (manifestPaths.some(manifest => owned(query('HKCU', view), manifest))) {

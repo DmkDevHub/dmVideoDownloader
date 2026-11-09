@@ -1,6 +1,6 @@
 // Process/CDP assertions only. No screen, click, keyboard, cookie or browser profile inspection.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
@@ -10,7 +10,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = process.env.DM_CHROME_BINARY ?? resolve(process.env.LOCALAPPDATA ?? '',
   'Programs/dm-video-tools/chrome-for-testing-157.0.8103.38/chrome-win64/chrome.exe');
 assert.ok(existsSync(binary), 'Set DM_CHROME_BINARY to a Chrome for Testing executable.');
-assert.ok(existsSync(resolve(root, 'extension/dist/manifest.json')), 'Run npm run build:extension first.');
+const extensionDir = resolve(root, process.env.DM_EXTENSION_DIR ?? 'extension/dist');
+assert.ok(existsSync(resolve(extensionDir, 'manifest.json')), 'Run npm run build:extension first.');
+const unpacked = realpathSync(extensionDir);
 mkdirSync(resolve(root, '.test-output'), { recursive: true });
 const profile = mkdtempSync(resolve(root, '.test-output/extension-'));
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -45,7 +47,7 @@ const browser = spawn(binary, ['--headless=new', '--no-first-run', '--no-default
   '--disable-background-networking', '--no-proxy-server',
   '--host-resolver-rules=MAP fixture.example.org 127.0.0.1',
   `--user-data-dir=${profile}`, '--remote-debugging-port=0',
-  `--load-extension=${resolve(root, 'extension/dist')}`, 'about:blank'],
+  `--load-extension=${unpacked}`, 'about:blank'],
 { windowsHide: true, stdio: 'ignore' });
 let socket;
 const pending = new Map(); let serial = 0;

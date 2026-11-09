@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R7-02] document and verify Chrome installation and deregistration
+
+- 휴대용 README에 실제 설정 메뉴, 새 프로필 unpacked 로드, ID 등록·왕복 테스트·복구·해제를 설명했다. Chrome for Testing에서 릴리스 Native Host의 정확한 allowlist, 후보 전달, 왕복 ACK, 복구·해제 후 미등록 응답을 확인했다. Chrome 미등록 오류의 고정 안내와 확장 단위 테스트 30개 PASS. 사용자 화면 조작은 미검증.
+
 ## 2026-11-09 — [R7-01] build a verified Windows portable ZIP
 
 - Windows x64 릴리스 앱·Host, 빌드된 확장, 검증된 yt-dlp/FFmpeg 및 라이선스·출처를 ZIP으로 묶었다. 도구 변조 입력을 빌드 전에 거부했다. 별도 추출 폴더에서 페이로드 15개와 ZIP SHA-256을 검증했다. 시스템 WebView2를 사용하는 미서명 로컬 검증용 패키지이다.
