@@ -125,6 +125,10 @@ impl Store {
     pub fn root(&self) -> &Path {
         &self.root
     }
+    pub fn current_settings(&self) -> Result<Settings, &'static str> {
+        folders::check_path(&self.path())?;
+        parse(&self.read()?)
+    }
     pub fn saved_directory(&self) -> Result<PathBuf, &'static str> {
         let _guard = self.lock()?;
         Ok(PathBuf::from(parse(&self.read()?)?.download_directory))

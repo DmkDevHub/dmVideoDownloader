@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-04] register one extension origin and remove only owned registration
+
+- TC-09/17/19 등록 경계 PASS. 격리 HKCU 실제 등록·읽기·타 복사본 해제 거부, 정확한 ID/절대 매니페스트 확인. Host와 앱이 각각 ID를 검증. Rust 9개·데스크톱 Vitest 13개·Host 프레임/앱 수신 PASS. 실제 Chrome 왕복은 후속 항목.
+
 ## 2026-11-09 — [R3-03] bridge the host to the Windows desktop
 
 - 실제 Windows Native Host EXE→Named Pipe→숨김 Tauri 앱 수신과 후보 ACK PASS. 설치 폴더별 pipe, 현재 사용자 ACL·원격 접속 거부·양방향 프로세스 경로와 SID 검사·제한 시간 적용. 데스크톱 단위 8개와 기본 smoke 4개 PASS. Chrome 등록은 후속 항목.

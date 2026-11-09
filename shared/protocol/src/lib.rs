@@ -344,3 +344,6 @@ pub fn request_id_hint(bytes: &[u8]) -> Option<String> {
 
 #[cfg(windows)]
 pub mod pipe;
+
+#[cfg(windows)]
+pub mod manifest;

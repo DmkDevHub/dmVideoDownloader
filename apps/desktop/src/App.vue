@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
-import type { BrowserRuntime } from './browserConnection';
+import { registrationLabel, type BrowserRuntime } from './browserConnection';
 
 const address = ref('');
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
@@ -12,6 +12,24 @@ const startupError = ref('');
 const snapshotState = ref<SettingsSnapshot>();
 const runtime = ref<BrowserRuntime>();
 const actionMessage = ref('');
+
+async function browserRegistration(action: 'register' | 'unregister') {
+  const current = editor.value;
+  if (!current || current.state.busy) return;
+  current.state.busy = true;
+  current.state.error = '';
+  try {
+    await invoke(action === 'register' ? 'browser_register' : 'browser_unregister', { extensionId: current.state.draft.browserExtensionId });
+    actionMessage.value = action === 'register' ? '호스트를 등록했습니다. 연결 테스트가 필요합니다.' : '호스트 등록을 해제했습니다.';
+  } catch (error) { current.state.error = registrationLabel(error); }
+  finally {
+    try {
+      runtime.value = await invoke<BrowserRuntime>('browser_runtime');
+      if (runtime.value.configuredId !== undefined) current.state.current.browserExtensionId = runtime.value.configuredId;
+    } catch { runtime.value = undefined; }
+    current.state.busy = false;
+  }
+}
 
 async function openDownloadFolder() {
   try { await invoke('open_download_folder'); actionMessage.value = '다운로드 폴더 열기를 요청했습니다.'; }
@@ -70,7 +88,7 @@ onMounted(async () => {
       } else if (phase === 'future') {
         smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
       }
-      smokePassed = smokePassed && runtime.value?.connectionActionsAvailable === false;
+      smokePassed = smokePassed && runtime.value?.connectionActionsAvailable === true && runtime.value.registrationCode !== 'REGISTERED';
       // Exercise the internal model in a hidden WebView, without clicks or keyboard events.
       editor.value?.open();
       await nextTick();
@@ -118,6 +136,6 @@ onMounted(async () => {
     </section>
     <footer class="status-row"><button :disabled="!snapshotState?.canSave" @click="openDownloadFolder">다운로드 폴더 열기</button><p class="hint" role="status">{{ actionMessage || '브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.' }}</p></footer>
     <div v-if="startupError" class="error" role="alert">{{ startupError }} <button @click="readSettings">설정 다시 읽기</button></div>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @registration="browserRegistration" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
   </main>
 </template>

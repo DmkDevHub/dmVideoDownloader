@@ -31,10 +31,37 @@ pub fn run() {
                 .ok_or("missing executable directory")?
                 .to_path_buf();
             let directory = default_download_directory(app.handle().clone())?;
+            app.manage(std::sync::Mutex::new(settings::Store::new(
+                root.clone(),
+                directory,
+            )));
             let bridge = std::sync::Arc::new(bridge::Bridge::new());
-            let _ = bridge.start(&root);
+            let handle = app.handle().clone();
+            let _ = bridge.start(&root, move |id| {
+                let state = handle.state::<std::sync::Mutex<settings::Store>>();
+                let store = state
+                    .lock()
+                    .map_err(|_| dm_video_protocol::Code::HostStartFailed)?;
+                let saved = store
+                    .current_settings()
+                    .map_err(|_| dm_video_protocol::Code::ExtensionIdMismatch)?;
+                if saved.browser_extension_id != id {
+                    return Err(dm_video_protocol::Code::ExtensionIdMismatch);
+                }
+                #[cfg(feature = "smoke-test")]
+                if std::env::var("DM_SMOKE_PHASE").as_deref() == Ok("bridge") {
+                    return dm_video_protocol::manifest::Manifest::verify(store.root(), id);
+                }
+                registration::Registry::chrome()
+                    .status(store.root(), id)
+                    .map_err(|error| match error {
+                        "EXTENSION_ID_MISMATCH" => dm_video_protocol::Code::ExtensionIdMismatch,
+                        "HOST_PATH_MISMATCH" => dm_video_protocol::Code::HostPathMismatch,
+                        _ => dm_video_protocol::Code::HostNotRegistered,
+                    })
+            });
             app.manage(bridge);
-            app.manage(std::sync::Mutex::new(settings::Store::new(root, directory)));
+
             #[cfg(feature = "smoke-test")]
             {
                 let handle = app.handle().clone();
@@ -53,6 +80,8 @@ pub fn run() {
             save_settings,
             recover_settings,
             browser::browser_runtime,
+            browser::browser_register,
+            browser::browser_unregister,
             browser::open_extension_folder,
             browser::open_chrome_extensions,
             browser::open_download_folder
@@ -66,6 +95,8 @@ pub fn run() {
         save_settings,
         recover_settings,
         browser::browser_runtime,
+        browser::browser_register,
+        browser::browser_unregister,
         browser::open_extension_folder,
         browser::open_chrome_extensions,
         browser::open_download_folder,
@@ -98,6 +129,7 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
 mod bridge;
 mod browser;
 mod folders;
+mod registration;
 mod settings;
 
 #[cfg(feature = "smoke-test")]

@@ -11,6 +11,12 @@ const desktop = join(root, 'VideoDownloader.exe');
 const host = join(root, 'VideoNativeHost.exe');
 copyFileSync(appBinary, desktop);
 copyFileSync(hostBinary, host);
+mkdirSync(join(root, 'data'));
+writeFileSync(join(root, 'data/settings.json'), JSON.stringify({ schemaVersion: 1, downloadDirectory: join(root, 'Downloads'),
+  quality: 'best', format: 'auto', filename: 'title', concurrentDownloads: 2, retryCount: 3,
+  browserAutoDetect: true, browserExtensionId: 'a'.repeat(32), completionNotification: true }));
+writeFileSync(join(root, 'native-host-manifest.json'), JSON.stringify({ name: 'com.browser_video_downloader.host',
+  description: 'Browser Video Downloader bridge', path: host, type: 'stdio', allowed_origins: ['chrome-extension://' + 'a'.repeat(32) + '/'] }));
 const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env, DM_SMOKE_ROOT: root, DM_SMOKE_PHASE: 'bridge' } });
 let stdout = ''; app.stderr.resume();
 app.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });

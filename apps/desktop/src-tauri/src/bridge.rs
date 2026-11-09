@@ -14,13 +14,23 @@ impl Bridge {
         }
     }
 
-    pub fn start(self: &Arc<Self>, root: &Path) -> std::io::Result<()> {
+    pub fn start(
+        self: &Arc<Self>,
+        root: &Path,
+        authorize: impl Fn(&str) -> Result<(), Code> + Send + 'static,
+    ) -> std::io::Result<()> {
         let server = pipe::Server::bind(root)?;
         let bridge = Arc::clone(self);
         std::thread::Builder::new()
             .name("native-bridge".into())
             .spawn(move || {
-                server.run(move |_, _, message| bridge.receive(message), |_| {});
+                server.run(
+                    move |_, id, message| match authorize(id) {
+                        Ok(()) => bridge.receive(message),
+                        Err(code) => Message::error(message.request_id, code),
+                    },
+                    |_| {},
+                );
             })?;
         Ok(())
     }

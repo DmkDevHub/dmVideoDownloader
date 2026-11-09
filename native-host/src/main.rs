@@ -18,6 +18,7 @@ fn main() {
                 frame::request_only(&request)?;
                 let origin = origin.as_deref().ok_or(Code::ExtensionIdMismatch)?;
                 let root = root.as_deref().ok_or(Code::HostPathMismatch)?;
+                dm_video_protocol::manifest::Manifest::verify(root, origin)?;
                 if client.is_none() {
                     client = Some(pipe::Client::connect(
                         root,

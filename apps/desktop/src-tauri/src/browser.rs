@@ -1,4 +1,4 @@
-use crate::{folders, settings::Store};
+use crate::{folders, registration::Registry, settings::Store};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -12,6 +12,9 @@ pub struct RuntimeInfo {
     host_available: bool,
     chrome_available: bool,
     connection_actions_available: bool,
+    registration_code: String,
+    registered_path: Option<String>,
+    configured_id: String,
 }
 
 fn chrome_path() -> Option<PathBuf> {
@@ -22,9 +25,11 @@ fn chrome_path() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-fn inspect(root: &Path) -> RuntimeInfo {
+fn inspect(root: &Path, id: &str) -> RuntimeInfo {
     let extension = root.join("extension");
+    let registry = Registry::chrome();
     RuntimeInfo {
+        configured_id: id.into(),
         extension_path: extension.to_string_lossy().into_owned(),
         extension_resources_available: [
             "manifest.json",
@@ -37,14 +42,47 @@ fn inspect(root: &Path) -> RuntimeInfo {
         .all(|name| extension.join(name).is_file()),
         host_available: root.join("VideoNativeHost.exe").is_file(),
         chrome_available: chrome_path().is_some(),
-        // Registry and round-trip implementation belong to R3, not this UI stage.
-        connection_actions_available: false,
+        connection_actions_available: true,
+        registration_code: registry
+            .status(root, id)
+            .err()
+            .unwrap_or("REGISTERED")
+            .into(),
+        registered_path: registry
+            .read()
+            .ok()
+            .flatten()
+            .map(|path| path.to_string_lossy().into_owned()),
     }
 }
 
 #[tauri::command]
 pub fn browser_runtime(store: tauri::State<Mutex<Store>>) -> Result<RuntimeInfo, String> {
-    Ok(inspect(store.lock().map_err(|_| "SETTINGS_BUSY")?.root()))
+    let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    let id = store
+        .current_settings()
+        .map(|settings| settings.browser_extension_id)
+        .unwrap_or_default();
+    Ok(inspect(store.root(), &id))
+}
+
+#[tauri::command]
+pub fn browser_register(
+    extension_id: String,
+    store: tauri::State<Mutex<Store>>,
+) -> Result<(), String> {
+    let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    Registry::chrome()
+        .register(&mut store, &extension_id)
+        .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub fn browser_unregister(store: tauri::State<Mutex<Store>>) -> Result<(), String> {
+    let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    Registry::chrome()
+        .remove(store.root())
+        .map_err(str::to_owned)
 }
 
 fn open_folder(path: &Path) -> Result<(), String> {
@@ -68,7 +106,7 @@ pub fn open_extension_folder(store: tauri::State<Mutex<Store>>) -> Result<(), St
         .map_err(|_| "SETTINGS_BUSY")?
         .root()
         .to_path_buf();
-    if !inspect(&root).extension_resources_available {
+    if !inspect(&root, "").extension_resources_available {
         return Err("EXTENSION_RESOURCES_MISSING".into());
     }
     open_folder(&root.join("extension"))
@@ -99,7 +137,7 @@ mod tests {
     #[test]
     fn resources_and_connection_success_are_distinct() {
         let root = tempfile::tempdir().unwrap();
-        let empty = inspect(root.path());
+        let empty = inspect(root.path(), "");
         assert!(!empty.extension_resources_available && !empty.host_available);
         std::fs::create_dir(root.path().join("extension")).unwrap();
         for name in [
@@ -112,8 +150,8 @@ mod tests {
             std::fs::write(root.path().join("extension").join(name), b"fixture").unwrap();
         }
         std::fs::write(root.path().join("VideoNativeHost.exe"), b"fixture").unwrap();
-        let resources = inspect(root.path());
+        let resources = inspect(root.path(), "");
         assert!(resources.extension_resources_available && resources.host_available);
-        assert!(!resources.connection_actions_available);
+        assert_ne!(resources.registration_code, "REGISTERED");
     }
 }

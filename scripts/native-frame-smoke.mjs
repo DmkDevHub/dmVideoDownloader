@@ -17,7 +17,7 @@ const processResult = spawnSync(host, ['chrome-extension://' + 'a'.repeat(32) + 
 assert.equal(processResult.status, 0);
 assert.equal(processResult.stderr.length, 0);
 let output = processResult.stdout;
-for (const [id, code] of [['first', 'APP_NOT_RUNNING'], ['second', 'UNSUPPORTED_VERSION']]) {
+for (const [id, code] of [['first', 'HOST_NOT_REGISTERED'], ['second', 'UNSUPPORTED_VERSION']]) {
   const len = output[endianness() === 'LE' ? 'readUInt32LE' : 'readUInt32BE']();
   const reply = JSON.parse(output.subarray(4, len + 4).toString('utf8'));
   assert.equal(reply.requestId, id);
