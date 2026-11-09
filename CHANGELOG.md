@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R7-03] verify the moved release executable with a non-elevated token
+
+- 실제 릴리스 EXE를 비승격 토큰과 별도 데스크톱에서 실행했다. 다른 작업 디렉터리에서 원래 위치와 공백·한글 이동 경로의 WebView2 기동 및 설정 원본 해시 보존 PASS. 별도 표준 사용자 계정이 없어 해당 인수는 보류.
+
 ## 2026-11-09 — [R7-02] document and verify Chrome installation and deregistration
 
 - 휴대용 README에 실제 설정 메뉴, 새 프로필 unpacked 로드, ID 등록·왕복 테스트·복구·해제를 설명했다. Chrome for Testing에서 릴리스 Native Host의 정확한 allowlist, 후보 전달, 왕복 ACK, 복구·해제 후 미등록 응답을 확인했다. Chrome 미등록 오류의 고정 안내와 확장 단위 테스트 30개 PASS. 사용자 화면 조작은 미검증.

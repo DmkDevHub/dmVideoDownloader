@@ -101,3 +101,5 @@ Chrome Native Messaging은 **확장이 연결을 시작**한다. EXE가 등록�
 - 수동 unpacked 설치, HKCU 경로와 정확한 `allowed_origins`는 [Chrome 설치 안내](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked), [Native Messaging 공식 규격](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)을 확인했다(2026-11-05). [Tauri 2 문서](https://v2.tauri.app/)는 실제 패키징 시 재확인한다.
 
 R3에서 Chrome for Testing의 임시 프로필로 실제 Host 등록·후보 전달·왕복 테스트와 앱 폴더 이동 후 복구를 검증했다. 최종 ZIP, 일반 Chrome 수동 설치 및 일반 사용자 계정 인수는 R7 범위다. [R3 검증 기록](TEST_PLAN.md#10-r3-브라우저와-windows-연결-검증-2026-11-09)
+
+PowerShell 7에서 `scripts/portable-runtime-smoke.ps1 -Archive <ZIP>`를 실행하면 같은 ZIP을 격리 폴더에 풀고 일반 릴리스 EXE를 별도 Windows 데스크톱에서 실행한다. 공백·한글이 있는 경로로 폴더를 옮긴 후에도 앱과 WebView2가 기동하고 기존 설정 파일을 읽는지 확인한다. 이 환경에서는 비승격 토큰으로 통과했다. 별도 표준 사용자 계정에서의 인수는 보류한다.
