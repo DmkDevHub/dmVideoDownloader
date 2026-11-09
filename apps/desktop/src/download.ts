@@ -3,7 +3,10 @@ import { analysisError } from './analysis';
 import { settingsError } from './settings';
 
 export type DownloadRequest = { kind: 'direct'; address: string } | { kind: 'candidate'; id: string };
-export interface DownloadProgress { downloaded: number; total: number | null; bytesPerSecond: number | null }
+export interface DownloadProgress {
+  downloaded: number; total: number | null; bytesPerSecond: number | null;
+  segments: [completed: number, total: number] | null;
+}
 export type DownloadAction = 'pause' | 'resume' | 'cancel' | 'retry';
 export const downloadPhase = {
   queued: '대기 중', analyzing: '영상 확인 중', downloading: '다운로드 중', merging: '파일 처리 중',
@@ -20,7 +23,9 @@ export function progressLabel(progress: DownloadProgress | null) {
   const size = progress.total
     ? Math.floor(progress.downloaded / progress.total * 100) + '%'
     : (progress.downloaded / 1048576).toFixed(1) + ' MiB';
-  return progress.bytesPerSecond == null ? size : size + ' · ' + (progress.bytesPerSecond / 1048576).toFixed(1) + ' MiB/s';
+  const parts = progress.segments ? ' · 조각 ' + progress.segments.join('/') : '';
+  const speed = progress.bytesPerSecond == null ? '' : ' · ' + (progress.bytesPerSecond / 1048576).toFixed(1) + ' MiB/s';
+  return size + parts + speed;
 }
 
 export function downloadError(error: unknown) {
@@ -29,6 +34,10 @@ export function downloadError(error: unknown) {
     case 'DOWNLOAD_JOB_MISSING': return '다운로드 작업을 찾을 수 없습니다.';
     case 'DOWNLOAD_ACTION_UNAVAILABLE': return '현재 상태에서 해당 작업을 할 수 없습니다.';
     case 'DOWNLOAD_FORMAT_UNSUPPORTED': return '저장할 수 있는 영상 포맷을 찾지 못했습니다.';
+    case 'HLS_PLAYLIST_UNSUPPORTED': return '지원하지 않는 HLS 재생목록 구성입니다.';
+    case 'HLS_LIVE_UNSUPPORTED': return '종료된 HLS 영상만 저장할 수 있습니다.';
+    case 'HLS_PROTECTED': return '암호화된 HLS 영상은 저장할 수 없습니다.';
+    case 'STREAM_RESPONSE_INVALID': return '영상 서버가 올바른 재생목록 또는 조각을 반환하지 않았습니다.';
     case 'CONTAINER_INCOMPATIBLE': return '선택한 파일 형식에 영상과 음성을 담을 수 없습니다. 설정의 파일 형식을 확인하세요.';
     case 'FFMPEG_MISSING': return '실행 파일 옆 tools 폴더에 ffmpeg.exe를 넣고 다시 시도하세요.';
     case 'FFMPEG_UNSUPPORTED': return '지원되는 FFmpeg 버전으로 교체한 뒤 다시 시도하세요.';

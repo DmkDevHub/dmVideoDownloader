@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R6-01] download clear HLS variants and matched audio
+
+- TC-04 전송 검증 PASS. 공개 Shaka HLS 마스터에서 720p 상한 이하 576p 영상과 기본 음성을 선택해 조각을 받고 MP4로 병합하여 두 트랙을 디코딩했다. 보호 선언·라이브·사설/민감 주소·바이트 범위 검증, Rust 31개와 타입 검사 PASS. 브라우저 UI 조작과 시각 인수는 미검증.
+
 ## 2026-11-09 — [R5-06] enforce download concurrency and dispatch Windows notifications
 
 - 설정의 1~4개 동시 작업 제한과 대기 작업 실행, 고정 실패 메시지, 완료 알림 설정 적용을 확인했다. Native Host·숨김 WebView 통합에서 실제 MP4 2개를 서로 다른 이름으로 저장·디코딩했으며 Windows Shell이 활성 작업의 완료 알림 요청 1건을 수락했다. npm run verify와 실제 도구 회귀 12개 PASS. Windows 알림 시각 표시와 릴리스 인수는 미검증.

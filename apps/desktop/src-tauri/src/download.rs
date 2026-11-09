@@ -6,7 +6,8 @@ use crate::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read},
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::Command,
@@ -15,8 +16,10 @@ use std::{
 };
 use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
+mod hls;
 pub(crate) mod notification;
 pub mod queue;
+mod stream;
 use queue::{Control, Work};
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -26,6 +29,7 @@ pub struct Progress {
     downloaded: u64,
     total: Option<u64>,
     bytes_per_second: Option<f64>,
+    segments: Option<(usize, usize)>,
 }
 
 fn progress(line: &[u8]) -> Option<Progress> {
@@ -45,6 +49,7 @@ fn progress(line: &[u8]) -> Option<Progress> {
             .or(estimate)
             .filter(|total| *total >= downloaded && *total > 0),
         bytes_per_second,
+        segments: None,
     })
 }
 
@@ -82,7 +87,7 @@ fn download(
                 format.tracks,
                 extract::Tracks::AudioVideo | extract::Tracks::VideoOnly | extract::Tracks::Unknown
             ) && matches!(format.container.as_deref(), Some("mp4" | "webm"))
-                && direct_transfer(format)
+                && supported_transfer(format)
                 && (settings.format != Container::Mp4 || format.container.as_deref() == Some("mp4"))
         }),
         &settings.quality,
@@ -91,7 +96,13 @@ fn download(
         .container
         .as_deref()
         .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
-    let audio = if format.tracks == extract::Tracks::VideoOnly {
+    let hls = format.media.as_ref().is_some_and(extract::Media::is_hls);
+    let streams = hls
+        .then(|| stream::StreamClient::new(control))
+        .transpose()?;
+    let audio = if let Some(streams) = &streams {
+        hls::audio(streams, format, &report.formats)?
+    } else if format.tracks == extract::Tracks::VideoOnly {
         report
             .formats
             .iter()
@@ -146,26 +157,39 @@ fn download(
         height: format.height,
     });
     let video_update = Arc::clone(&update);
-    transfer(&analyzer, format, &video, control, move |value| {
-        video_update(Update::Progress(value))
-    })?;
+    let video_demux = transfer(
+        &analyzer,
+        streams.as_ref(),
+        format,
+        &video,
+        control,
+        move |value| video_update(Update::Progress(value)),
+    )?;
     let audio_file = audio
-        .map(|audio| -> Result<PathBuf, &'static str> {
+        .map(|audio| -> Result<(PathBuf, Demux), &'static str> {
             let ext = audio
                 .container
                 .as_deref()
                 .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
             let file = staging.path().join(format!("audio.{ext}"));
             let audio_update = Arc::clone(&update);
-            transfer(&analyzer, audio, &file, control, move |value| {
-                audio_update(Update::Progress(value))
-            })?;
-            Ok(file)
+            let demux = transfer(
+                &analyzer,
+                streams.as_ref(),
+                audio,
+                &file,
+                control,
+                move |value| audio_update(Update::Progress(value)),
+            )?;
+            Ok((file, demux))
         })
         .transpose()?;
     update(Update::Merging);
     let path = staging.path().join(format!("finished.{output_ext}"));
-    remux(&ffmpeg, &video, audio_file.as_deref(), &path, control)?;
+    let audio = audio_file
+        .as_ref()
+        .map(|(file, demux)| (file.as_path(), *demux));
+    remux(&ffmpeg, (&video, video_demux), audio, &path, control)?;
     let filename = control.commit(|| publish(&path, &directory, &stem, output_ext))?;
     Ok(Saved {
         filename,
@@ -259,10 +283,14 @@ fn direct_transfer(format: &extract::Format) -> bool {
         .is_some_and(|media| matches!(media.protocol.as_str(), "http" | "https"))
 }
 
+fn supported_transfer(format: &extract::Format) -> bool {
+    direct_transfer(format) || format.media.as_ref().is_some_and(extract::Media::is_hls)
+}
+
 fn same_family(video_ext: &str, audio: &extract::Format) -> bool {
     matches!(
         (video_ext, audio.container.as_deref()),
-        ("mp4", Some("m4a")) | ("webm", Some("webm"))
+        ("mp4", Some("m4a" | "mp4")) | ("webm", Some("webm"))
     )
 }
 
@@ -276,23 +304,55 @@ fn ffmpeg(root: &Path) -> Result<PathBuf, &'static str> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Demux {
+    Mov,
+    Matroska,
+    HlsPacked,
+}
+impl Demux {
+    fn input_format(self, path: &Path) -> Result<&'static str, &'static str> {
+        match self {
+            Self::Mov => Ok("mov"),
+            Self::Matroska => Ok("matroska"),
+            Self::HlsPacked => {
+                let mut input = fs::File::open(path).map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
+                let mut prefix = [0; 377];
+                let mut length = 0;
+                while length < prefix.len() {
+                    let read = input
+                        .read(&mut prefix[length..])
+                        .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
+                    if read == 0 {
+                        break;
+                    }
+                    length += read;
+                }
+                if length == prefix.len()
+                    && [0, 188, 376].iter().all(|offset| prefix[*offset] == 0x47)
+                {
+                    Ok("mpegts")
+                } else {
+                    Ok("aac")
+                }
+            }
+        }
+    }
+}
+
 fn remux(
     ffmpeg: &Path,
-    video: &Path,
-    audio: Option<&Path>,
+    video: (&Path, Demux),
+    audio: Option<(&Path, Demux)>,
     output: &Path,
     control: &Control,
 ) -> Result<(), &'static str> {
     folders::check_path(output)?;
     let mut command = Command::new(ffmpeg);
     command.args(["-nostdin", "-v", "error", "-xerror", "-n"]);
-    for input in [Some(video), audio].into_iter().flatten() {
+    for (input, demux) in [Some(video), audio].into_iter().flatten() {
         folders::check_path(input)?;
-        let demuxer = match input.extension().and_then(|ext| ext.to_str()) {
-            Some("mp4" | "m4a") => "mov",
-            Some("webm") => "matroska",
-            _ => return Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
-        };
+        let demuxer = demux.input_format(input)?;
         command
             .args(["-protocol_whitelist", "file", "-f", demuxer, "-i"])
             .arg(input);
@@ -360,13 +420,21 @@ fn choose_video<'a>(
 
 fn transfer(
     analyzer: &extract::Analyzer,
+    streams: Option<&stream::StreamClient<'_>>,
     format: &extract::Format,
     path: &Path,
     control: &Control,
     mut update: impl FnMut(Progress) + Send + 'static,
-) -> Result<(), &'static str> {
+) -> Result<Demux, &'static str> {
     folders::check_path(path)?;
     let media = format.media.as_ref().ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
+    if media.is_hls() {
+        let streams = streams.ok_or("DOWNLOAD_FAILED")?;
+        let (base, text) = streams.playlist(&media.url)?;
+        let (parts, demux) = hls::plan(&base, &text)?;
+        streams.transfer(&parts, path, update)?;
+        return Ok(demux);
+    }
     let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
     // Construct a new info object. Never pass through extractor metadata, headers, or file paths.
     let input = serde_json::to_vec(&serde_json::json!({
@@ -423,7 +491,11 @@ fn transfer(
     if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0) {
         return Err("DOWNLOAD_FAILED");
     }
-    Ok(())
+    match format.container.as_deref() {
+        Some("mp4" | "m4a") => Ok(Demux::Mov),
+        Some("webm") => Ok(Demux::Matroska),
+        _ => Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
+    }
 }
 
 fn move_without_replacing(source: &Path, destination: &Path) -> io::Result<()> {
@@ -646,6 +718,39 @@ mod tests {
         assert!(result.filename.ends_with(".mp4"));
         decode(&root, &output.path().join(result.filename), true);
         println!("DASH_DOWNLOAD_AND_MERGE_PASS: 546p with audio");
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_hls_saves_selected_video_and_default_audio() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let output = tempfile::tempdir().unwrap();
+        let mut settings = Settings::defaults(output.path().to_str().unwrap().into());
+        settings.quality = Quality::Q720;
+        let (send, receive) = std::sync::mpsc::channel();
+        let result = download(
+            &Work {
+                root: root.clone(),
+                settings,
+                page: "https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8"
+                    .into(),
+                media: None,
+            },
+            &Control::default(),
+            move |event| {
+                if let Update::Progress(progress) = event {
+                    send.send(progress).unwrap();
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(result.height, Some(576));
+        assert!(result.filename.ends_with(".mp4"));
+        assert!(receive.try_iter().any(|progress| progress
+            .segments
+            .is_some_and(|(done, total)| done == total && total > 1)));
+        decode(&root, &output.path().join(result.filename), true);
+        println!("HLS_DOWNLOAD_AND_DECODE_PASS: 576p with audio");
     }
 
     fn decode(root: &Path, file: &Path, audio: bool) {

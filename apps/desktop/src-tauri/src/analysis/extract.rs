@@ -55,6 +55,12 @@ pub struct Format {
 pub struct Media {
     pub url: url::Url,
     pub protocol: String,
+    pub manifest: Option<url::Url>,
+}
+impl Media {
+    pub fn is_hls(&self) -> bool {
+        matches!(self.protocol.as_str(), "m3u8_native" | "m3u8")
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -102,9 +108,9 @@ fn normalize(raw: RawFormat) -> Option<Format> {
     let tracks = match (&video, &audio) {
         (Codec::Named(_), Codec::Named(_)) => Tracks::AudioVideo,
         (Codec::Named(_), Codec::Absent) => Tracks::VideoOnly,
-        (Codec::Absent, Codec::Named(_)) => Tracks::AudioOnly,
         (Codec::Absent, Codec::Absent) => return None,
-        (Codec::Absent | Codec::Unknown, _)
+        (Codec::Absent, _) => Tracks::AudioOnly,
+        (Codec::Unknown, _)
             if matches!(
                 container.as_deref(),
                 Some("mp3" | "m4a" | "aac" | "opus" | "wav" | "flac" | "oga" | "wma" | "mka")
@@ -132,7 +138,11 @@ fn normalize(raw: RawFormat) -> Option<Format> {
             .as_deref()
             .and_then(proxy::target)
             .zip(raw.protocol)
-            .map(|(url, protocol)| Media { url, protocol }),
+            .map(|(url, protocol)| Media {
+                url,
+                protocol,
+                manifest: raw.manifest_url.as_deref().and_then(proxy::target),
+            }),
     })
 }
 #[derive(Serialize)]
