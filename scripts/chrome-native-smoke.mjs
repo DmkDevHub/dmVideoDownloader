@@ -13,7 +13,7 @@ const owned = (result, path) => hasDefault(result) && result.stdout.split(/\r?\n
   line.includes('REG_SZ') && line.trimEnd().endsWith(path));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function runChromeNativeSmoke({ root, extensionId, requestSelection, candidateId }) {
+export async function runChromeNativeSmoke({ root, extensionId, requestSelection, requestDiagnosis, waitForSettings, candidateId }) {
   const appBinary = process.env.DM_NATIVE_APP;
   const hostBinary = process.env.DM_NATIVE_HOST;
   assert.ok(appBinary && hostBinary, 'Specify DM_NATIVE_APP and DM_NATIVE_HOST together.');
@@ -29,7 +29,7 @@ export async function runChromeNativeSmoke({ root, extensionId, requestSelection
   copyFileSync(hostBinary, join(stage, 'VideoNativeHost.exe'));
   mkdirSync(join(stage, 'data'));
   writeFileSync(join(stage, 'data/settings.json'), JSON.stringify({ schemaVersion: 1, downloadDirectory: join(stage, 'Downloads'),
-    quality: 'best', format: 'auto', filename: 'title', concurrentDownloads: 2, retryCount: 3, browserAutoDetect: true,
+    quality: 'best', format: 'auto', filename: 'title', concurrentDownloads: 2, retryCount: 3, browserAutoDetect: false,
     browserExtensionId: extensionId, completionNotification: true }));
   const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env, DM_SMOKE_ROOT: stage, DM_SMOKE_PHASE: 'chrome-bridge' } });
   let stdout = '';
@@ -47,11 +47,15 @@ export async function runChromeNativeSmoke({ root, extensionId, requestSelection
     const result = await requestSelection();
     assert.equal(result.code, 'ACK');
     assert.equal(result.ok, true);
+    const diagnosis = await requestDiagnosis();
+    assert.equal(diagnosis.code, 'ACK');
+    assert.ok(diagnosis.verifiedAt);
+    await waitForSettings();
     writeFileSync(join(stage, 'bridge-ack'), candidateId);
     assert.equal(await closed, 0);
     assert.match(stdout, /SMOKE_PASS:/u);
     for (const view of views) assert.ok(!hasDefault(query('HKCU', view)), 'Temporary registration was not removed.');
-    console.log('CHROME_NATIVE_PASS: popup selection -> Chrome native host -> Tauri candidate row -> ACK');
+    console.log('CHROME_NATIVE_PASS: selection, candidate row, diagnostic ACK/disconnect, and runtime settings');
   } finally {
     if (app.exitCode === null) { app.kill(); await closed; }
     for (const view of views) {

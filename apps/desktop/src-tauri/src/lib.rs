@@ -50,10 +50,12 @@ pub fn run() {
                 }
                 #[cfg(feature = "smoke-test")]
                 if std::env::var("DM_SMOKE_PHASE").as_deref() == Ok("bridge") {
-                    return dm_video_protocol::manifest::Manifest::verify(store.root(), id);
+                    return dm_video_protocol::manifest::Manifest::verify(store.root(), id)
+                        .map(|()| saved.browser_auto_detect);
                 }
                 registration::Registry::chrome()
                     .status(store.root(), id)
+                    .map(|()| saved.browser_auto_detect)
                     .map_err(|error| match error {
                         "EXTENSION_ID_MISMATCH" => dm_video_protocol::Code::ExtensionIdMismatch,
                         "HOST_PATH_MISMATCH" => dm_video_protocol::Code::HostPathMismatch,
@@ -80,6 +82,8 @@ pub fn run() {
             save_settings,
             recover_settings,
             browser::browser_runtime,
+            browser::browser_begin_test,
+            browser::browser_connection_status,
             bridge::received_candidates,
             browser::browser_register,
             browser::browser_unregister,
@@ -96,6 +100,8 @@ pub fn run() {
         save_settings,
         recover_settings,
         browser::browser_runtime,
+        browser::browser_begin_test,
+        browser::browser_connection_status,
         bridge::received_candidates,
         browser::browser_register,
         browser::browser_unregister,
@@ -130,6 +136,7 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
 }
 mod bridge;
 mod browser;
+mod connection;
 mod folders;
 mod registration;
 mod settings;
@@ -143,12 +150,11 @@ fn smoke_phase() -> String {
 #[tauri::command]
 fn recover_settings(
     store: tauri::State<std::sync::Mutex<settings::Store>>,
+    bridge: tauri::State<std::sync::Arc<bridge::Bridge>>,
 ) -> Result<settings::Snapshot, String> {
-    store
-        .lock()
-        .map_err(|_| "SETTINGS_BUSY")?
-        .recover()
-        .map_err(str::to_owned)
+    let snapshot = store.lock().map_err(|_| "SETTINGS_BUSY")?.recover()?;
+    bridge.invalidate();
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -166,12 +172,17 @@ fn load_settings(
 fn save_settings(
     settings: settings::Settings,
     store: tauri::State<std::sync::Mutex<settings::Store>>,
+    bridge: tauri::State<std::sync::Arc<bridge::Bridge>>,
 ) -> Result<settings::Settings, String> {
-    store
-        .lock()
-        .map_err(|_| "SETTINGS_BUSY")?
-        .save(settings)
-        .map_err(str::to_owned)
+    let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    let id_changed = store
+        .current_settings()
+        .is_ok_and(|saved| saved.browser_extension_id != settings.browser_extension_id);
+    let saved = store.save(settings)?;
+    if id_changed {
+        bridge.invalidate();
+    }
+    Ok(saved)
 }
 
 #[tauri::command]

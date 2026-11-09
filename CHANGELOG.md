@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-07] confirm the bounded connection handshake and sync detection
+
+- TC-17 실제 Chrome↔Host↔숨김 앱 진단 왕복 PASS. 앱에서 30초 대기, 연결·요청 ID에 묶인 PONG/ACK, 포트 종료 후 현재 성공 해제와 마지막 성공 유지. 만료 경계·다른 포트·재전송·대기 중 종료는 Rust 단위 검증. 성공 후 별도 상태 요청으로 실제 앱 자동 감지 설정을 확장에 반영. Rust 12개·Vitest 40개 PASS.
+
 ## 2026-11-09 — [R3-06] display candidates delivered by the Chrome native host
 
 - Chrome for Testing 157 실제 확장 팝업의 내부 선택 메시지→Chrome Native Host→숨김 Tauri 후보 행→ACK PASS. 운영 등록/해제 명령으로 임시 HKCU 등록 후 제거 확인. 화면 클릭·시각적 인수와 실제 다운로드는 미검증.

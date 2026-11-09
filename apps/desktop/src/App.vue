@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
-import { registrationLabel, type BrowserRuntime } from './browserConnection';
+import { connectionLabel, registrationLabel, type BrowserRuntime, type ConnectionStatus } from './browserConnection';
 
 const address = ref('');
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
@@ -12,6 +12,11 @@ const startupError = ref('');
 const snapshotState = ref<SettingsSnapshot>();
 const runtime = ref<BrowserRuntime>();
 const actionMessage = ref('');
+const connection = ref<ConnectionStatus>({ phase: 'needsCheck', roundTripConfirmed: false, lastSuccessAt: null });
+async function refreshConnection() {
+  try { connection.value = await invoke<ConnectionStatus>('browser_connection_status'); }
+  catch { connection.value = { ...connection.value, phase: 'needsCheck', roundTripConfirmed: false }; }
+}
 const candidates = ref<{ id: string; title: string; sourceType: string }[]>([]);
 let candidateTimer: ReturnType<typeof setInterval> | undefined;
 let refreshingCandidates = false;
@@ -24,20 +29,25 @@ async function refreshCandidates() {
 }
 onUnmounted(() => clearInterval(candidateTimer));
 
-async function browserRegistration(action: 'register' | 'repair' | 'unregister') {
+async function browserRegistration(action: 'register' | 'repair' | 'unregister' | 'test') {
   const current = editor.value;
   if (!current || current.state.busy) return;
   current.state.busy = true;
   current.state.error = '';
   try {
-    await invoke(action === 'unregister' ? 'browser_unregister' : 'browser_register', { extensionId: current.state.draft.browserExtensionId, repair: action === 'repair' });
-    actionMessage.value = action === 'unregister' ? '호스트 등록을 해제했습니다.' : '호스트를 등록했습니다. 연결 테스트가 필요합니다.';
+    if (action === 'test') {
+      connection.value = await invoke<ConnectionStatus>('browser_begin_test');
+    } else {
+      await invoke(action === 'unregister' ? 'browser_unregister' : 'browser_register', { extensionId: current.state.draft.browserExtensionId, repair: action === 'repair' });
+      actionMessage.value = action === 'unregister' ? '호스트 등록을 해제했습니다.' : '호스트를 등록했습니다. 연결 테스트가 필요합니다.';
+    }
   } catch (error) { current.state.error = registrationLabel(error); }
   finally {
     try {
       runtime.value = await invoke<BrowserRuntime>('browser_runtime');
       if (runtime.value.configuredId !== undefined) current.state.current.browserExtensionId = runtime.value.configuredId;
     } catch { runtime.value = undefined; }
+    await refreshConnection();
     current.state.busy = false;
   }
 }
@@ -96,11 +106,17 @@ onMounted(async () => {
           await invoke('browser_register', { extensionId: snapshot.settings.browserExtensionId });
           runtime.value = await invoke<BrowserRuntime>('browser_runtime');
           if (runtime.value.registrationCode !== 'REGISTERED') throw new Error('REGISTRATION_FAILED');
+          connection.value = await invoke<ConnectionStatus>('browser_begin_test');
+          if (connection.value.phase !== 'waiting') throw new Error('CONNECTION_TEST_NOT_WAITING');
         }
         for (let attempt = 0; attempt < 100 && !smokePassed; attempt++) {
           await refreshCandidates();
           await nextTick();
           smokePassed = await invoke<boolean>('smoke_bridge_received') && document.querySelectorAll('[data-received-candidate]').length === 1;
+          if (phase === 'chrome-bridge') {
+            await refreshConnection();
+            smokePassed = smokePassed && connection.value.phase === 'disconnected' && !!connection.value.lastSuccessAt;
+          }
           if (!smokePassed) await new Promise(resolve => setTimeout(resolve, 100));
         }
         if (phase === 'chrome-bridge') {
@@ -124,7 +140,8 @@ onMounted(async () => {
     } else {
       if (snapshot.notice) editor.value?.open();
       void refreshCandidates();
-      candidateTimer = setInterval(refreshCandidates, 750);
+      void refreshConnection();
+      candidateTimer = setInterval(() => { void refreshCandidates(); void refreshConnection(); }, 750);
     }
   } catch (error) {
     startupError.value = settingsError(error);
@@ -148,7 +165,7 @@ onMounted(async () => {
       <label for="video-url">영상 URL 직접 입력</label>
       <div class="input-row"><input id="video-url" v-model="address" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" /><button disabled>분석</button></div>
       <p class="hint">인증 없이 접근 가능한 공개 영상만 지원합니다. 분석 기능은 준비 중입니다.</p>
-      <div class="status-row"><span class="badge">Chrome 연동: 확인 필요</span><span>자동 감지: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐 · 연결 후 동기화 필요' : '꺼짐') : '설정 확인 필요' }}</span></div>
+      <div class="status-row"><span class="badge">Chrome 연동: {{ connectionLabel(connection) }}</span><span>자동 감지 설정: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐' : '꺼짐') : '설정 확인 필요' }}</span></div>
     </section>
     <section class="panel" aria-labelledby="candidates-heading">
       <h2 id="candidates-heading">감지된 영상</h2>
@@ -161,8 +178,8 @@ onMounted(async () => {
       <h2 id="jobs-heading">다운로드</h2>
       <div class="table-scroll"><table><thead><tr><th>제목</th><th>화질</th><th>진행률 / 속도</th><th>상태</th><th>작업</th></tr></thead><tbody><tr><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr></tbody></table></div>
     </section>
-    <footer class="status-row"><button :disabled="!snapshotState?.canSave" @click="openDownloadFolder">다운로드 폴더 열기</button><p class="hint" role="status">{{ actionMessage || '브라우저 연결이 설정되지 않았습니다. 감지·다운로드 기능은 준비 중입니다.' }}</p></footer>
+    <footer class="status-row"><button :disabled="!snapshotState?.canSave" @click="openDownloadFolder">다운로드 폴더 열기</button><p class="hint" role="status">{{ actionMessage }}</p></footer>
     <div v-if="startupError" class="error" role="alert">{{ startupError }} <button @click="readSettings">설정 다시 읽기</button></div>
-    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @registration="browserRegistration" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
+    <SettingsDialog v-if="editor?.state.open" :draft="editor.state.draft" :busy="editor.state.busy" :error="editor.state.error" :can-save="snapshotState?.canSave" :can-recover="snapshotState?.canRecover" :notice="snapshotState?.notice ? settingsError(snapshotState.notice) : ''" :saved-id="editor.state.current.browserExtensionId" :runtime="runtime" :status="connection" @cancel="editor.cancel()" @reset="editor.reset()" @recover="recoverSettings" @registration="browserRegistration" @browse="editor.browse(() => invoke<string | null>('pick_download_directory'))" @save="editor.save((settings: Settings) => invoke<Settings>('save_settings', { settings }))" />
   </main>
 </template>

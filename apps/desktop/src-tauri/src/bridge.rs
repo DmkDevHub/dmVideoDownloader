@@ -1,12 +1,19 @@
-use dm_video_protocol::{pipe, Ack, Body, Candidate, Code, Message, SourceType};
+use crate::connection::{Connection, Status};
+use dm_video_protocol::{pipe, Ack, Body, Candidate, Code, Message, RuntimeStatus, SourceType};
 use serde::Serialize;
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Instant,
 };
 
 pub struct Bridge {
     inbox: Mutex<Vec<(String, Candidate)>>,
+    connection: Mutex<Connection>,
+    listening: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -39,30 +46,77 @@ impl Bridge {
     pub fn new() -> Self {
         Self {
             inbox: Mutex::new(Vec::new()),
+            connection: Mutex::new(Connection::new()),
+            listening: AtomicBool::new(false),
         }
     }
 
     pub fn start(
         self: &Arc<Self>,
         root: &Path,
-        authorize: impl Fn(&str) -> Result<(), Code> + Send + 'static,
+        authorize: impl Fn(&str) -> Result<bool, Code> + Send + 'static,
     ) -> std::io::Result<()> {
         let server = pipe::Server::bind(root)?;
         let bridge = Arc::clone(self);
-        std::thread::Builder::new()
+        self.listening.store(true, Ordering::Release);
+        let result = std::thread::Builder::new()
             .name("native-bridge".into())
             .spawn(move || {
+                let receiver = Arc::clone(&bridge);
+                let closer = Arc::clone(&bridge);
                 server.run(
-                    move |_, id, message| match authorize(id) {
-                        Ok(()) => bridge.receive(message),
+                    move |connection, id, message| match authorize(id) {
+                        Ok(auto_detect) => receiver.receive(connection, id, auto_detect, message),
                         Err(code) => Message::error(message.request_id, code),
                     },
-                    |_| {},
+                    move |connection| {
+                        if let Ok(mut state) = closer.connection.lock() {
+                            state.closed(connection);
+                        }
+                    },
                 );
-            })?;
-        Ok(())
+                bridge.listening.store(false, Ordering::Release);
+                bridge.invalidate();
+            });
+        if result.is_err() {
+            self.listening.store(false, Ordering::Release);
+        }
+        result.map(|_| ())
     }
-    fn receive(&self, message: Message) -> Message {
+    pub fn invalidate(&self) {
+        if let Ok(mut state) = self.connection.lock() {
+            state.reset();
+        }
+    }
+    pub fn begin_test(&self) -> Result<Status, &'static str> {
+        if !self.listening.load(Ordering::Acquire) {
+            return Err("HOST_START_FAILED");
+        }
+        self.connection
+            .lock()
+            .map_err(|_| "BRIDGE_BUSY")?
+            .begin(Instant::now())
+    }
+    pub fn status(&self) -> Result<Status, &'static str> {
+        Ok(self
+            .connection
+            .lock()
+            .map_err(|_| "BRIDGE_BUSY")?
+            .status(Instant::now()))
+    }
+    fn receive(
+        &self,
+        connection: u64,
+        extension_id: &str,
+        auto_detect: bool,
+        message: Message,
+    ) -> Message {
+        if matches!(message.body, Body::Ping(_) | Body::ConnectionTestResult(_)) {
+            return match self.connection.lock() {
+                Ok(mut state) => state.handle(Instant::now(), connection, extension_id, message),
+                Err(_) => Message::error(message.request_id, Code::HostStartFailed),
+            };
+        }
         let id = message.request_id;
         match message.body {
             Body::VideoCandidate(candidate) => {
@@ -88,7 +142,15 @@ impl Bridge {
                     }),
                 )
             }
-            _ => Message::error(id, Code::ConnectionTestNotWaiting),
+            Body::GetRuntimeStatus(_) => Message::new(
+                id,
+                Body::RuntimeStatus(RuntimeStatus {
+                    protocol_version: 1,
+                    app_reachable: true,
+                    browser_auto_detect: auto_detect,
+                }),
+            ),
+            _ => Message::error(id, Code::InvalidPayload),
         }
     }
 }

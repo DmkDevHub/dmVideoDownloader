@@ -2,10 +2,10 @@
 import { onMounted, ref } from 'vue';
 import type { Settings } from './settings';
 import BrowserConnection from './BrowserConnection.vue';
-import type { BrowserRuntime } from './browserConnection';
+import type { BrowserRuntime, ConnectionStatus } from './browserConnection';
 
-defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string; savedId?: string; runtime?: BrowserRuntime }>();
-defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: []; registration: [action: 'register' | 'repair' | 'unregister'] }>();
+defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string; savedId?: string; runtime?: BrowserRuntime; status?: ConnectionStatus }>();
+defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: []; registration: [action: 'register' | 'repair' | 'unregister' | 'test'] }>();
 const dialog = ref<HTMLDialogElement>();
 onMounted(() => dialog.value?.showModal());
 </script>
@@ -30,11 +30,11 @@ onMounted(() => dialog.value?.showModal());
       <fieldset :disabled="busy">
         <legend>브라우저 / 알림</legend>
         <label class="check"><input v-model="draft.browserAutoDetect" type="checkbox" />브라우저 영상 자동 감지</label>
-        <p class="hint">확장 연결 후 동기화됩니다. 이 옵션만으로 확장을 설치하거나 등록하지 않습니다.</p>
+        <p class="hint">저장 후 연결 테스트를 완료하면 확장이 이 설정을 읽습니다.</p>
         <label class="check"><input v-model="draft.completionNotification" type="checkbox" />다운로드 완료 알림</label>
       </fieldset>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <BrowserConnection v-model:extension-id="draft.browserExtensionId" :saved-id="savedId ?? ''" :busy="busy" :can-save="canSave !== false" :runtime="runtime" @registration="$emit('registration', $event)" />
+      <BrowserConnection v-model:extension-id="draft.browserExtensionId" :saved-id="savedId ?? ''" :busy="busy" :can-save="canSave !== false" :runtime="runtime" :status="status" @registration="$emit('registration', $event)" />
       <p v-if="notice" class="error" role="status">{{ notice }}</p>
       <button v-if="canRecover" type="button" :disabled="busy" @click="$emit('recover')">손상 파일 백업 후 기본값 저장</button>
       <p class="hint">다운로드 옵션은 새 작업부터 적용됩니다. 기본값 복원은 저장을 눌러야 적용됩니다.</p>

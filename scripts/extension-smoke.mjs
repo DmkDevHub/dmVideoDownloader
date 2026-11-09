@@ -109,12 +109,6 @@ try {
     return state.candidates?.length >= 2 && state.candidates;
   }, 'MP4/WebM request metadata');
   assert.deepEqual(rows.map(r => r.sourceType).sort(), ['mp4', 'webm']);
-  if (process.env.DM_NATIVE_APP || process.env.DM_NATIVE_HOST) {
-    const candidateId = rows.find(row => row.sourceType === 'mp4').candidateId;
-    const command = { type: 'DOWNLOAD_SELECTED', tabId, candidateId };
-    await runChromeNativeSmoke({ root, extensionId, candidateId,
-      requestSelection: () => evaluate(popupSession, `chrome.runtime.sendMessage(${JSON.stringify(command)})`) });
-  }
   assert.ok(rows.every(r => r.tabId === tabId && r.status === 'detected'));
   if (playableMp4) {
     await evaluate(pageSession, `(() => { const video = document.createElement('video');
@@ -172,6 +166,14 @@ try {
   await evaluate(pageSession, 'fetch("/sample.webm").then(() => true)');
   await until(async () => (await stateForTab()).candidates.length === 1, 'new page candidate');
   assert.ok((await stateForTab()).candidates[0].pageUrl.endsWith('/next'));
+  if (process.env.DM_NATIVE_APP || process.env.DM_NATIVE_HOST) {
+    const candidateId = (await stateForTab()).candidates[0].candidateId;
+    const command = { type: 'DOWNLOAD_SELECTED', tabId, candidateId };
+    await runChromeNativeSmoke({ root, extensionId, candidateId,
+      requestSelection: () => evaluate(popupSession, `chrome.runtime.sendMessage(${JSON.stringify(command)})`),
+      requestDiagnosis: () => evaluate(popupSession, 'chrome.runtime.sendMessage({type:"CONNECTION_TEST"})'),
+      waitForSettings: () => until(async () => (await stateForTab()).autoDetect === false, 'app runtime setting') });
+  }
   await evaluate(popupSession, 'chrome.storage.local.set({lastRuntimeSettings:{browserAutoDetect:false}}).then(() => true)');
   await until(async () => (await stateForTab()).autoDetect === false && (await stateForTab()).candidates.length === 0, 'last-confirmed auto-detect off');
   assert.equal(await evaluate(popupSession, `chrome.action.getBadgeText({tabId:${tabId}})`), '');

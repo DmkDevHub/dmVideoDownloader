@@ -1,8 +1,8 @@
-use crate::{folders, registration::Registry, settings::Store};
+use crate::{bridge::Bridge, connection::Status, folders, registration::Registry, settings::Store};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,19 +76,41 @@ pub fn browser_register(
     extension_id: String,
     repair: Option<bool>,
     store: tauri::State<Mutex<Store>>,
+    bridge: tauri::State<Arc<Bridge>>,
 ) -> Result<(), String> {
     let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    bridge.invalidate();
     Registry::chrome()
         .register(&mut store, &extension_id, repair.unwrap_or(false))
         .map_err(str::to_owned)
 }
 
 #[tauri::command]
-pub fn browser_unregister(store: tauri::State<Mutex<Store>>) -> Result<(), String> {
+pub fn browser_unregister(
+    store: tauri::State<Mutex<Store>>,
+    bridge: tauri::State<Arc<Bridge>>,
+) -> Result<(), String> {
     let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    bridge.invalidate();
     Registry::chrome()
         .remove(store.root())
         .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub fn browser_begin_test(
+    store: tauri::State<Mutex<Store>>,
+    bridge: tauri::State<Arc<Bridge>>,
+) -> Result<Status, String> {
+    let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
+    let settings = store.current_settings()?;
+    Registry::chrome().status(store.root(), &settings.browser_extension_id)?;
+    bridge.begin_test().map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub fn browser_connection_status(bridge: tauri::State<Arc<Bridge>>) -> Result<Status, String> {
+    bridge.status().map_err(str::to_owned)
 }
 
 fn open_folder(path: &Path) -> Result<(), String> {

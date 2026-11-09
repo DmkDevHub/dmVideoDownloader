@@ -1,5 +1,5 @@
 import { CandidateStore, domObservation, networkObservation, publicUrl } from './media';
-import { failure, sendCandidate, testConnection, type NativeResult } from './native';
+import { failure, readRuntimeSettings, sendCandidate, testConnection, type NativeResult } from './native';
 export function startBackground(api: typeof chrome): () => Promise<unknown> {
   const store = new CandidateStore();
   let autoDetect = true;
@@ -100,6 +100,12 @@ export function startBackground(api: typeof chrome): () => Promise<unknown> {
           try { await api.storage.session.set({ lastSuccessfulTest: lastVerifiedAt }); } catch { cacheAvailable = false; }
         }
         respond(result);
+        if (result.ok) {
+          const browserAutoDetect = await readRuntimeSettings(api.runtime);
+          if (browserAutoDetect !== undefined) {
+            await api.storage.local.set({ lastRuntimeSettings: { browserAutoDetect } }).catch(() => undefined);
+          }
+        }
       }).catch(() => respond(failure('HOST_START_FAILED'))).finally(() => { connectionTestInFlight = undefined; });
       return true;
     }

@@ -1,7 +1,7 @@
 import { publicUrl, type Candidate } from './media';
 import { HOST_NAME, validateEnvelope, type Envelope } from '../../shared/protocol';
 export { HOST_NAME };
-export interface NativeResult { ok: boolean; code: string; safeMessage: string; verifiedAt?: string }
+export interface NativeResult { ok: boolean; code: string; safeMessage: string; verifiedAt?: string; browserAutoDetect?: boolean }
 const errors: Record<string, string> = {
   HOST_NOT_REGISTERED: '호스트 등록을 확인하세요.',
   HOST_START_FAILED: '연결을 시작하지 못했습니다. 앱 설정에서 호스트 등록·확장 ID·경로와 Chrome 정책을 확인하세요.',
@@ -17,6 +17,8 @@ const errors: Record<string, string> = {
   CONNECTION_TEST_TIMEOUT: '30초 안에 연결 테스트를 완료하지 못했습니다. 앱에서 테스트 대기를 다시 시작하세요.',
   CANDIDATE_BUSY: '이 후보의 전달 결과를 기다리고 있습니다.',
   CONNECTION_TEST_BUSY: '이미 연결 테스트를 진행하고 있습니다.',
+  CONNECTION_TEST_NOT_WAITING: 'Windows 앱에서 연결 테스트 대기를 시작하세요.',
+  REGISTRATION_FAILED: 'Windows 앱에서 호스트 등록 상태를 확인하세요.',
 };
 export const failure = (code: string): NativeResult => {
   const safeCode = Object.hasOwn(errors, code) ? code : 'INVALID_PAYLOAD';
@@ -85,4 +87,12 @@ export function testConnection(runtime: Runtime): Promise<NativeResult> {
     }
     return failure('INVALID_PAYLOAD');
   }, 'CONNECTION_TEST_TIMEOUT');
+}
+
+export async function readRuntimeSettings(runtime: Runtime): Promise<boolean | undefined> {
+  const result = await nativeTransaction(runtime, { version: 1, type: 'GET_RUNTIME_STATUS', requestId: crypto.randomUUID(), payload: {} }, 3000,
+    message => message.type === 'RUNTIME_STATUS' && message.payload.appReachable === true && typeof message.payload.browserAutoDetect === 'boolean'
+      ? { ok: true, code: 'RUNTIME_STATUS', safeMessage: '', browserAutoDetect: message.payload.browserAutoDetect }
+      : failure('INVALID_PAYLOAD'));
+  return result.browserAutoDetect;
 }
