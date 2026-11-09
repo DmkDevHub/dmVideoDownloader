@@ -103,3 +103,7 @@ Chrome Native Messaging은 **확장이 연결을 시작**한다. EXE가 등록�
 R3에서 Chrome for Testing의 임시 프로필로 실제 Host 등록·후보 전달·왕복 테스트와 앱 폴더 이동 후 복구를 검증했다. 최종 ZIP, 일반 Chrome 수동 설치 및 일반 사용자 계정 인수는 R7 범위다. [R3 검증 기록](TEST_PLAN.md#10-r3-브라우저와-windows-연결-검증-2026-11-09)
 
 PowerShell 7에서 `scripts/portable-runtime-smoke.ps1 -Archive <ZIP>`를 실행하면 같은 ZIP을 격리 폴더에 풀고 일반 릴리스 EXE를 별도 Windows 데스크톱에서 실행한다. 공백·한글이 있는 경로로 폴더를 옮긴 후에도 앱과 WebView2가 기동하고 기존 설정 파일을 읽는지 확인한다. 이 환경에서는 비승격 토큰으로 통과했다. 별도 표준 사용자 계정에서의 인수는 보류한다.
+
+`npm run smoke`로 만든 테스트 앱 경로를 `DM_NATIVE_APP`에 지정한 뒤 `node scripts/portable-extension-move-smoke.mjs <압축을 푼 포터블 폴더>`로 확장 이동을 검증한다. 테스트는 별도 Chrome for Testing 프로필 두 개를 사용한다. 기존 Native Host 등록 값이 있으면 중단하며, 등록을 시험할 때에는 테스트 경로의 HKCU 값만 정리한다. Chrome 정책 값은 읽어서 전후 상태를 비교한다.
+
+Chrome이 Native Host 접근을 거부하면 팝업에서 실제 확장 ID와 조직의 Native Messaging 정책을 확인하도록 안내한다. 이 응답만으로 ID 불일치와 정책 차단을 구분할 수 없다. 조직 관리 환경의 차단 여부는 관리자가 확인한다. [Chrome Native Messaging 오류 안내](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging#common-errors)

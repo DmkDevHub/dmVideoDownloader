@@ -140,3 +140,9 @@
 - 같은 Windows x64 개발 환경 A에서 기존 yt-dlp 2026.10.26, FFmpeg 9.0.2, Chrome for Testing 157.0.8103.38을 사용했다. Cargo 잠금 파일에 조각 전송용 reqwest 0.13.5의 Windows TLS 기능과 정적 MPD 검사용 quick-xml 0.42.0을 반영했다.
 - TEST_PLAN 13절의 공개 HLS·DASH 전송, FFmpeg 디코딩 및 Chrome 후보 그룹화·세션 복원 PASS. 공개 HLS는 Shaka Angel One, 공개 조각형 DASH는 DASH-IF Big Buck Bunny 테스트 자산을 사용했다. [Shaka 예제](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist) · [DASH-IF 테스트 자산](https://dashif.org/tools/testassets/)
 - `DM_R4_TOOL_ROOT`를 지정한 `npm run verify`에서 단위 테스트 80개, 숨김 앱·Native Host, 공개 HLS 저장과 양쪽 트랙 디코딩, 일반 앱·확장 빌드 PASS. 실제 공개 오류 응답 및 재시도 테스트 2개를 별도로 다시 실행했다.
+
+### R7 포터블 배포 검증 (2026-11-09)
+
+- 개발 환경 A의 Windows 11 Pro x64, 비승격 권한에서 진행했다. `npm run package:portable -- <도구 루트>`로 생성한 ZIP을 별도로 풀어 15개 구성 파일의 SHA-256과 ZIP 해시를 검증했다. `scripts/portable-runtime-smoke.ps1`로 실제 릴리스 EXE의 별도 작업 디렉터리 실행, WebView2 기동, 공백·한글 경로 이동 후 설정 보존 PASS. 별도 표준 사용자 계정은 미검증이다.
+- R7-04의 `npm run verify`에서 단위 테스트 81개와 저장 설정 스냅샷·HLS 디코딩을 포함한 앱 통합 PASS. 실제 외부 도구 회귀 14개 PASS. 최종 변경 후 확장 단위 31개와 숨김 앱 스모크 4회도 PASS.
+- 최종 패키지의 확장으로 `scripts/portable-extension-move-smoke.mjs` PASS. 서로 다른 임시 Chrome for Testing 프로필에서 실제 ID 변경, 이전 등록으로 접근 거부, 새 ID로 정확한 허용 목록 갱신과 왕복·해제 확인. Chrome 정책 레지스트리 전후 상태 일치. 일반 Chrome 수동 설치와 실제 조직 정책 차단은 미검증이다.

@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R7-05] verify unpacked extension relocation and access denial guidance
+
+- 최종 ZIP의 확장을 새 Chrome for Testing 프로필 두 개에서 unpacked 로드했다. 한글·공백 경로로 옮기자 실제 ID가 변경됐고, 이전 allowlist의 접근 거부 후 새 ID 단일 등록·왕복·해제가 통과했다. Chrome 정책 레지스트리 전후 일치, 확장 단위 31개 PASS. 일반 Chrome 수동 설치·실제 조직 정책 차단은 미검증.
+
 ## 2026-11-09 — [R7-04] record release regression results and portable user guide
 
 - TC-01~20의 실행 결과와 남은 인수 조건을 기록하고 ZIP 사용 설명서를 완성했다. npm run verify에서 단위 테스트 81개와 숨김 WebView·Native Host 통합 PASS. 실제 도구 회귀 14개 PASS. 진행 중인 MP4가 기존 폴더에, 변경 후 새 HLS가 다른 폴더의 576p MKV에 저장되고 양쪽 트랙이 디코딩됨을 확인했다.

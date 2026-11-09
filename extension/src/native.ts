@@ -4,6 +4,7 @@ export { HOST_NAME };
 export interface NativeResult { ok: boolean; code: string; safeMessage: string; verifiedAt?: string; browserAutoDetect?: boolean }
 const errors: Record<string, string> = {
   HOST_NOT_REGISTERED: '호스트 등록을 확인하세요.',
+  HOST_ACCESS_DENIED: 'Chrome이 호스트 접근을 거부했습니다. 앱에 등록한 확장 ID와 조직의 Native Messaging 정책을 확인하세요.',
   HOST_START_FAILED: '연결을 시작하지 못했습니다. 앱 설정에서 호스트 등록·확장 ID·경로와 Chrome 정책을 확인하세요.',
   EXTENSION_ID_MISMATCH: '앱 설정의 확장 ID를 확인하고 다시 등록하세요.',
   HOST_PATH_MISMATCH: '이동한 앱 경로로 호스트를 다시 등록하세요.',
@@ -43,8 +44,14 @@ export function nativeTransaction(runtime: Runtime, initial: Envelope, timeout: 
       port = runtime.connectNative(HOST_NAME);
       port.onDisconnect.addListener(() => {
         const message = runtime.lastError?.message;
-        if (!done) finish(failure(message === 'Specified native messaging host not found.'
-          ? 'HOST_NOT_REGISTERED' : 'HOST_START_FAILED'));
+        if (done) return;
+        switch (message) {
+          case 'Specified native messaging host not found.':
+            finish(failure('HOST_NOT_REGISTERED')); break;
+          case 'Access to the specified native messaging host is forbidden.':
+            finish(failure('HOST_ACCESS_DENIED')); break;
+          default: finish(failure('HOST_START_FAILED'));
+        }
       });
       port.onMessage.addListener((input: unknown) => {
         if (done) return;

@@ -67,6 +67,14 @@ test('Chrome missing-host disconnect gets the registration guidance', async () =
   port.onDisconnect.emit();
   expect(await result).toMatchObject({ ok: false, code: 'HOST_NOT_REGISTERED' });
 });
+test('Chrome access denial gives fixed ID and policy guidance without claiming a cause', async () => {
+  const port = fakePort();
+  const result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port,
+    lastError: { message: 'Access to the specified native messaging host is forbidden.' } });
+  port.onDisconnect.emit();
+  expect(await result).toMatchObject({ ok: false, code: 'HOST_ACCESS_DENIED' });
+  expect((await result).safeMessage).toContain('Native Messaging 정책');
+});
 test('diagnostic rejects ACK before PONG, wrong ID, app-unreachable and protocol mismatch', async () => {
   for (const scenario of ['early-ack', 'wrong-id', 'unreachable', 'protocol']) {
     const port = fakePort(), result = testConnection({ connectNative: () => port as unknown as chrome.runtime.Port });

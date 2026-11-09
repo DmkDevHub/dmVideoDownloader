@@ -86,6 +86,7 @@ try {
   }, 'MV3 worker');
   const extensionId = new URL(worker.url).hostname;
   assert.match(extensionId, /^[a-p]{32}$/);
+  console.log('EXTENSION_ID=' + extensionId);
   const workerSession = worker.sessionId;
   assert.equal(await evaluate(workerSession, 'chrome.runtime.getManifest().manifest_version'), 3);
   const { targetId } = await send('Target.createTarget', { url: pageUrl });

@@ -26,9 +26,16 @@ async function verifyInstall(stage, phase, { extensionId, requestSelection, requ
     app.once('close', code => { exited = code; resolve(code); });
   });
   try {
+    const ready = () => {
+      if (!existsSync(manifest) || !owned(query('HKCU', views[0]), manifest)) return false;
+      try {
+        const current = JSON.parse(readFileSync(manifest, 'utf8'));
+        return current.allowed_origins?.length === 1 && current.allowed_origins[0] === 'chrome-extension://' + extensionId + '/';
+      } catch { return false; }
+    };
     const deadline = Date.now() + 9000;
-    while (Date.now() < deadline && exited === undefined && !owned(query('HKCU', views[0]), manifest)) await pause(80);
-    assert.ok(existsSync(manifest) && owned(query('HKCU', views[0]), manifest), 'Desktop did not register the isolated Host.');
+    while (Date.now() < deadline && exited === undefined && !ready()) await pause(80);
+    assert.ok(ready(), 'Desktop did not register the isolated Host and expected ID.');
     const nativeManifest = JSON.parse(readFileSync(manifest, 'utf8'));
     assert.equal(realpathSync(nativeManifest.path), join(stage, 'VideoNativeHost.exe'));
     assert.deepEqual(nativeManifest.allowed_origins, ['chrome-extension://' + extensionId + '/']);
@@ -70,6 +77,22 @@ export async function runChromeNativeSmoke(options) {
     quality: 'best', format: 'auto', filename: 'title', concurrentDownloads: 2, retryCount: 3, browserAutoDetect: false,
     browserExtensionId: extensionId, completionNotification: true }));
   try {
+    const previousId = process.env.DM_PREVIOUS_EXTENSION_ID;
+    if (previousId) {
+      assert.match(previousId, /^[a-p]{32}$/u);
+      assert.notEqual(previousId, extensionId);
+      assert.ok(views.every(view => !hasValues(query('HKCU', view))), 'Test Host registration changed unexpectedly.');
+      writeFileSync(manifestPaths[0], JSON.stringify({
+        name: 'com.browser_video_downloader.host', description: 'Browser Video Downloader bridge',
+        path: join(stage, 'VideoNativeHost.exe'), type: 'stdio', allowed_origins: ['chrome-extension://' + previousId + '/'],
+      }));
+      const registered = registry('add', 'HKCU', '/ve', '/t', 'REG_SZ', '/d', manifestPaths[0], '/f', views[0]);
+      assert.equal(registered.status, 0, 'Could not stage the isolated previous extension ID.');
+      const denied = await options.requestDiagnosis();
+      assert.equal(denied.code, 'HOST_ACCESS_DENIED');
+      assert.equal(denied.verifiedAt, undefined);
+      console.log('OLD_ALLOWLIST_DENIED: moved unpacked extension rejected before re-registration');
+    }
     await verifyInstall(stage, 'chrome-move-from', options, candidateId);
     assert.ok(owned(query('HKCU', views[0]), manifestPaths[0]));
     assert.ok(!existsSync(moved));
