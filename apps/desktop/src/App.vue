@@ -147,6 +147,7 @@ async function recoverSettings() {
 }
 
 onMounted(async () => {
+  let smokeDetails = '';
   let smokePassed = false;
   try {
     const snapshot = await invoke<SettingsSnapshot>('load_settings');
@@ -196,6 +197,11 @@ onMounted(async () => {
           await nextTick();
           const candidateShown = analysis.value?.source === 'media' &&
             document.querySelectorAll('[data-analysis-result] tbody tr').length === 1;
+          const first = await startDownload();
+          const firstError = downloadMessage.value;
+          await invoke('save_settings', { settings: { ...snapshot.settings, completionNotification: false } });
+          const second = await startDownload();
+          const secondError = downloadMessage.value;
           address.value = 'https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/extra-video-features.html';
           await analyzeAddress();
           await nextTick();
@@ -204,8 +210,23 @@ onMounted(async () => {
           address.value = 'http://127.0.0.1/private';
           await analyzeAddress();
           await nextTick();
+          let downloadsShown = false;
+          for (let attempt = 0; first && second && attempt < 240 && !downloadsShown; attempt++) {
+            await refreshDownloads();
+            await nextTick();
+            const saved = jobs.value.filter(job => job.phase === 'completed');
+            if (jobs.value.some(job => job.phase === 'failed')) break;
+            downloadsShown = first !== second && saved.length === 2 && saved.every(job => job.filename?.endsWith('.mp4')) &&
+              new Set(saved.map(job => job.filename)).size === 2 &&
+              document.querySelectorAll('[data-download-row]').length === 2 &&
+              await invoke<number>('smoke_notification_count') === 1;
+            if (!downloadsShown) await new Promise(resolve => setTimeout(resolve, 250));
+          }
+          smokeDetails = JSON.stringify({ candidateShown, directShown, first, second, firstError, secondError,
+            jobs: jobs.value.map(({ phase, error }) => ({ phase, error })),
+            notifications: await invoke<number>('smoke_notification_count') });
           smokePassed = candidateShown && directShown && !analysis.value &&
-            document.querySelector('[data-analysis-message]')?.textContent?.trim() === analysisError('URL_NOT_ALLOWED');
+            document.querySelector('[data-analysis-message]')?.textContent?.trim() === analysisError('URL_NOT_ALLOWED') && downloadsShown;
         }
         if (phase === 'chrome-move-to') {
           await invoke('browser_unregister');
@@ -235,11 +256,13 @@ onMounted(async () => {
     }
   } catch (error) {
     startupError.value = settingsError(error);
+    smokeDetails = startupError.value;
   }
   // Compiled out of normal builds.
   if (import.meta.env.MODE === 'smoke') {
     await invoke('smoke_ready', {
       mounted: document.querySelector('[data-app-ready]') !== null && !!editor.value && smokePassed,
+      diagnostics: smokeDetails,
     });
   }
 });
@@ -284,7 +307,7 @@ onMounted(async () => {
         <tr v-for="job in jobs" :key="job.id" data-download-row>
           <td>{{ job.title }}</td><td>{{ job.height ? job.height + 'p' : '미확인' }}</td>
           <td>{{ job.phase === 'completed' ? '100%' : progressLabel(job.progress) }}</td>
-          <td>{{ downloadPhase[job.phase] }}<span v-if="job.error" class="error"> · {{ downloadError(job.error) }}</span></td>
+          <td>{{ downloadPhase[job.phase] }}<span v-if="job.phase === 'retrying'"> ({{ job.attempt + 1 }}회차)</span><span v-if="job.error" class="error"> · {{ downloadError(job.error) }}</span></td>
           <td>
             <span v-if="job.filename">{{ job.filename }}</span>
             <button v-if="['queued', 'analyzing', 'downloading', 'retrying'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'pause')">일시정지</button>

@@ -177,3 +177,19 @@ R2 완료는 확장 측 기능과 위 내부·실제 headless 프로세스 검�
 검증된 도구를 둔 포터블 루트의 절대경로를 `DM_R4_TOOL_ROOT`에 지정한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib analysis:: -- --ignored --nocapture --test-threads=1`은 공개 응답과 실제 도구를 검증한다. 같은 환경에서 `npm run verify`를 실행하면 Native Host 스모크에 숨김 WebView 분석 검증이 추가된다.
 
 화면 시각 인수, 사이트별 지원 범위, 다운로드와 병합·재생은 이 검증 범위 밖이다.
+
+## 12. R5 다운로드 엔진 검증 (2026-11-09)
+
+| 검증 범위 | 실행 결과 |
+|---|---|
+| 공개 단일 MP4 | yt-dlp의 바이트 진행률, 지정 위치 저장, FFmpeg 전체 영상 디코딩 PASS |
+| TC-07 화질 | 최고·2160p·1080p·720p 상한 단위 테스트 PASS. 공개 Sintel DASH의 최고 1636p와 720p 상한 546p를 비교하고 546p MP4를 실제 저장 |
+| TC-05 분리 스트림 | 공개 Sintel DASH의 독립 영상·음성을 받고 FFmpeg 스트림 복사로 병합한 MP4에서 두 트랙 디코딩 PASS |
+| TC-01/02 파일 저장 | 저장 후 새 설정 인스턴스에서 한글 경로를 불러와 실제 MP4 생성 PASS. Windows 예약명과 경로 검증, 동시 파일명 충돌 시 기존 파일 보존 PASS |
+| TC-08 취소 및 재시도 | 실제 Windows 프로세스 종료, 실제 전송 중 일시정지 시 작업 파일 제거와 처음부터 재개, 503 재시도 및 401 즉시 중단 PASS. 게시와 취소의 경계 및 작업 상태 전이 단위 테스트 PASS |
+| TC-13 도구와 실행 오류 | 기존 실제 도구 버전과 누락 검증, 고정 오류 분류 및 표시 경로를 회귀 검증 |
+| 작업 제한과 완료 알림 | 작업 슬롯 2개와 후속 대기 작업 시작, 성공·실패·알림 설정에 따른 요청 여부 단위 테스트 PASS. Native Host→숨김 WebView→다운로드 2건과 고유 출력 파일 PASS. Windows Shell이 알림을 켠 작업의 요청 1건을 수락 |
+
+`DM_R4_TOOL_ROOT`에 검증된 도구의 포터블 루트를 지정한다. `npm run verify`는 숨김 WebView에서 실제 다운로드를 검사하고, `DM_R5_TEST_WINDOWS_NOTIFICATION=1`을 추가하면 Windows Shell 호출의 반환값을 확인한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- --ignored --nocapture --test-threads=1`은 공개 미디어 전송·병합·재시도와 R4 실제 도구 회귀를 실행한다.
+
+Windows 알림의 시각 표시, 사용자 클릭·키보드 인수, Chrome 감지부터 전체 다운로드·재생까지의 릴리스 인수는 별도 검증 범위이다. 세그먼트 기반 HLS/DASH 다운로드는 R6에서 다룬다.

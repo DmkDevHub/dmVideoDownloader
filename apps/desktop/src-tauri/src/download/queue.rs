@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Condvar, Mutex},
     time::Duration,
 };
-use tauri::State;
+use tauri::{AppHandle, State};
 
 const MAX_JOBS: usize = 64;
 
@@ -125,11 +125,21 @@ struct Job {
     control: Option<Arc<Control>>,
 }
 
-#[derive(Default)]
 struct Jobs {
     next: u32,
     entries: Vec<Job>,
     closing: bool,
+    limit: usize,
+}
+impl Default for Jobs {
+    fn default() -> Self {
+        Self {
+            next: 0,
+            entries: Vec::new(),
+            closing: false,
+            limit: 2,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -162,6 +172,7 @@ impl Queue {
         }
         jobs.next = jobs.next.checked_add(1).ok_or("DOWNLOAD_QUEUE_FULL")?;
         let id = jobs.next;
+        jobs.limit = usize::from(work.settings.concurrent_downloads);
         jobs.entries.push(Job {
             view: JobView {
                 id,
@@ -182,11 +193,12 @@ impl Queue {
 
     fn action(&self, id: u32, action: Action) -> Result<(), &'static str> {
         let mut jobs = self.jobs.lock().unwrap();
-        let job = jobs
+        let index = jobs
             .entries
-            .iter_mut()
-            .find(|job| job.view.id == id)
+            .iter()
+            .position(|job| job.view.id == id)
             .ok_or("DOWNLOAD_JOB_MISSING")?;
+        let job = &mut jobs.entries[index];
         let phase = job.view.phase;
         match (action, phase, job.control.as_ref()) {
             (Action::Pause, Phase::Queued, None) => job.view.phase = Phase::Paused,
@@ -224,12 +236,23 @@ impl Queue {
         job.view.can_retry = false;
         job.view.progress = None;
         job.view.attempt = 1;
+        if job.view.phase == Phase::Queued {
+            let job = jobs.entries.remove(index);
+            jobs.entries.push(job);
+        }
         Ok(())
     }
 
     fn claim(&self) -> Option<(u32, Arc<Work>, Arc<Control>)> {
         let mut jobs = self.jobs.lock().unwrap();
-        if jobs.closing || jobs.entries.iter().any(|job| job.control.is_some()) {
+        if jobs.closing
+            || jobs
+                .entries
+                .iter()
+                .filter(|job| job.control.is_some())
+                .count()
+                >= jobs.limit
+        {
             return None;
         }
         let job = jobs
@@ -252,18 +275,26 @@ impl Queue {
         }
     }
 
-    fn schedule(self: &Arc<Self>) {
-        if let Some((id, work, control)) = self.claim() {
+    fn schedule(self: &Arc<Self>, app: &AppHandle) {
+        while let Some((id, work, control)) = self.claim() {
             let queue = Arc::clone(self);
+            let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     queue.run(id, &work, &control)
                 }))
                 .unwrap_or(Err("DOWNLOAD_FAILED"));
-                queue.finish(id, result);
-                queue.schedule();
+                if let Some(filename) = queue.finish(id, result) {
+                    super::notification::completed(&app, id, filename);
+                }
+                queue.schedule(&app);
             });
         }
+    }
+
+    pub fn set_limit(self: &Arc<Self>, app: &AppHandle, limit: u8) {
+        self.jobs.lock().unwrap().limit = usize::from(limit.clamp(1, 4));
+        self.schedule(app);
     }
 
     fn run(
@@ -314,16 +345,24 @@ impl Queue {
         Err("DOWNLOAD_FAILED")
     }
 
-    fn finish(&self, id: u32, result: Result<Saved, &'static str>) {
+    fn finish(&self, id: u32, result: Result<Saved, &'static str>) -> Option<String> {
         let mut jobs = self.jobs.lock().unwrap();
         let Some(job) = jobs.entries.iter_mut().find(|job| job.view.id == id) else {
-            return;
+            return None;
         };
         job.control = None;
         job.view.progress = None;
         job.view.error = None;
+        let mut notification = None;
         job.view.phase = match (job.view.phase, result) {
             (_, Ok(saved)) => {
+                if job
+                    .work
+                    .as_ref()
+                    .is_some_and(|work| work.settings.completion_notification)
+                {
+                    notification = Some(saved.filename.clone());
+                }
                 job.view.filename = Some(saved.filename);
                 job.view.height = saved.height;
                 job.work = None;
@@ -343,6 +382,7 @@ impl Queue {
                 Phase::Failed
             }
         };
+        notification
     }
 
     pub fn shutdown(&self) -> (bool, bool) {
@@ -383,6 +423,7 @@ fn retryable(code: &str) -> bool {
 
 #[tauri::command]
 pub fn download_video(
+    app: AppHandle,
     request: Request,
     store: State<'_, Mutex<Store>>,
     bridge: State<'_, Arc<Bridge>>,
@@ -408,7 +449,7 @@ pub fn download_video(
         page,
         media,
     })?;
-    queue.inner().schedule();
+    queue.inner().schedule(&app);
     Ok(id)
 }
 
@@ -426,12 +467,13 @@ pub fn download_jobs(queue: State<'_, Arc<Queue>>) -> Vec<JobView> {
 
 #[tauri::command]
 pub fn download_action(
+    app: AppHandle,
     id: u32,
     action: Action,
     queue: State<'_, Arc<Queue>>,
 ) -> Result<(), String> {
     queue.action(id, action)?;
-    queue.inner().schedule();
+    queue.inner().schedule(&app);
     Ok(())
 }
 
@@ -440,12 +482,14 @@ mod tests {
     use super::*;
 
     fn work() -> Work {
-        Work {
+        let mut work = Work {
             root: PathBuf::new(),
             settings: Settings::defaults(String::new()),
             page: "https://example.org/video".into(),
             media: None,
-        }
+        };
+        work.settings.concurrent_downloads = 1;
+        work
     }
 
     #[test]
@@ -468,9 +512,53 @@ mod tests {
         queue.finish(first, Err("AUTH_REQUIRED"));
         assert!(queue.action(first, Action::Retry).is_err());
         let jobs = queue.jobs.lock().unwrap();
-        assert_eq!(jobs.entries[0].view.phase, Phase::Failed);
-        assert_eq!(jobs.entries[1].view.phase, Phase::Cancelled);
+        assert_eq!(
+            jobs.entries
+                .iter()
+                .find(|job| job.view.id == first)
+                .unwrap()
+                .view
+                .phase,
+            Phase::Failed
+        );
+        assert_eq!(
+            jobs.entries
+                .iter()
+                .find(|job| job.view.id == second)
+                .unwrap()
+                .view
+                .phase,
+            Phase::Cancelled
+        );
         assert!(jobs.entries.iter().all(|job| job.work.is_none()));
+    }
+
+    #[test]
+    fn scheduler_caps_active_jobs_and_only_notifies_enabled_successes() {
+        let queue = Queue::default();
+        let mut enabled = work();
+        enabled.settings.concurrent_downloads = 2;
+        let first = queue.enqueue(enabled).unwrap();
+        let mut disabled = work();
+        disabled.settings.concurrent_downloads = 2;
+        disabled.settings.completion_notification = false;
+        let second = queue.enqueue(disabled).unwrap();
+        let mut third = work();
+        third.settings.concurrent_downloads = 2;
+        let third = queue.enqueue(third).unwrap();
+        assert_eq!(queue.claim().unwrap().0, first);
+        assert_eq!(queue.claim().unwrap().0, second);
+        assert!(queue.claim().is_none());
+        let saved = || {
+            Ok(Saved {
+                filename: "video.mp4".into(),
+                height: None,
+            })
+        };
+        assert_eq!(queue.finish(first, saved()).as_deref(), Some("video.mp4"));
+        assert_eq!(queue.claim().unwrap().0, third);
+        assert!(queue.finish(second, saved()).is_none());
+        assert!(queue.finish(third, Err("NETWORK_ERROR")).is_none());
     }
 
     #[test]

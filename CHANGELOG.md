@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R5-06] enforce download concurrency and dispatch Windows notifications
+
+- 설정의 1~4개 동시 작업 제한과 대기 작업 실행, 고정 실패 메시지, 완료 알림 설정 적용을 확인했다. Native Host·숨김 WebView 통합에서 실제 MP4 2개를 서로 다른 이름으로 저장·디코딩했으며 Windows Shell이 활성 작업의 완료 알림 요청 1건을 수락했다. npm run verify와 실제 도구 회귀 12개 PASS. Windows 알림 시각 표시와 릴리스 인수는 미검증.
+
 ## 2026-11-09 — [R5-05] manage download lifecycle and transient retries
 
 - TC-08 작업 대기·분석·전송·병합·일시정지·취소·실패·완료 상태와 제한된 네트워크 재시도를 검증했다. 실제 전송 중 일시정지 시 임시 파일 0개, 처음부터 재개 후 저장을 확인했다. 실제 503은 설정대로 재시도하고 401은 재시도 없이 중단했다. Windows 프로세스 종료와 게시/취소 경계 테스트 PASS. 바이트 단위 이어받기는 제공하지 않는다.

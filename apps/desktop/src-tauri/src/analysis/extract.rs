@@ -330,6 +330,9 @@ impl Analyzer {
         if proxy.blocked() {
             return Err("URL_NOT_ALLOWED");
         }
+        if proxy.limited() {
+            return Err("METADATA_LIMIT");
+        }
         let output = output.map_err(|error| match error {
             RunError::Interrupted => "DOWNLOAD_INTERRUPTED",
             RunError::Timeout => "ANALYSIS_TIMEOUT",

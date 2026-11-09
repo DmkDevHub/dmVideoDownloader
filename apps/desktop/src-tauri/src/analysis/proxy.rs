@@ -19,6 +19,7 @@ const MAX_REQUESTS: usize = 96;
 struct Limits {
     stopped: AtomicBool,
     blocked: AtomicBool,
+    limited: AtomicBool,
     connections: AtomicUsize,
     requests: AtomicUsize,
     bytes: AtomicUsize,
@@ -33,6 +34,7 @@ impl Limits {
         Self {
             stopped: AtomicBool::new(false),
             blocked: AtomicBool::new(false),
+            limited: AtomicBool::new(false),
             connections: AtomicUsize::new(0),
             requests: AtomicUsize::new(0),
             bytes: AtomicUsize::new(0),
@@ -78,6 +80,9 @@ impl Proxy {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let requests = worker.requests.fetch_add(1, Ordering::Relaxed);
+                        if requests >= worker.max_requests {
+                            worker.limited.store(true, Ordering::Relaxed);
+                        }
                         if requests >= worker.max_requests || worker.connections.load(Ordering::Relaxed) >= MAX_CONNECTIONS {
                             let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                             let _ = stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
@@ -106,6 +111,9 @@ impl Proxy {
     }
     pub fn blocked(&self) -> bool {
         self.limits.blocked.load(Ordering::Relaxed)
+    }
+    pub fn limited(&self) -> bool {
+        self.limits.limited.load(Ordering::Relaxed)
     }
 }
 impl Drop for Proxy {
@@ -296,9 +304,11 @@ fn relay(reader: &mut impl Read, writer: &mut impl Write, limits: &Limits) {
         match reader.read(&mut buffer) {
             Ok(0) => break,
             Ok(n) => {
-                if limits.bytes.fetch_add(n, Ordering::Relaxed) + n > limits.max_bytes
-                    || writer.write_all(&buffer[..n]).is_err()
-                {
+                if limits.bytes.fetch_add(n, Ordering::Relaxed) + n > limits.max_bytes {
+                    limits.limited.store(true, Ordering::Relaxed);
+                    break;
+                }
+                if writer.write_all(&buffer[..n]).is_err() {
                     break;
                 }
             }

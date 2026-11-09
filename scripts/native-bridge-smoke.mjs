@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join, resolve } from 'node:path';
 
@@ -29,8 +29,10 @@ writeFileSync(join(root, 'native-host-manifest.json'), JSON.stringify({ name: 'c
 const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env,
   WEBVIEW2_USER_DATA_FOLDER: join(root, 'webview-test'), DM_SMOKE_ROOT: root,
   DM_SMOKE_PHASE: toolRoot ? 'bridge-analysis' : 'bridge' } });
-let stdout = ''; app.stderr.resume();
+let stdout = '';
+let stderr = '';
 app.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+app.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
 const exit = new Promise((done, reject) => { app.on('error', reject); app.on('exit', done); });
 const pause = ms => new Promise(done => setTimeout(done, ms));
 const message = { version: 1, type: 'VIDEO_CANDIDATE', requestId: 'bridge-smoke', payload: {
@@ -90,8 +92,18 @@ try {
   }
   assert.ok(received, 'Host never received desktop ACK');
   writeFileSync(join(root, 'bridge-ack'), 'bridge-row');
-  assert.equal(await exit, 0);
+  assert.equal(await exit, 0, stderr || stdout);
   assert.match(stdout, /SMOKE_PASS:/u);
   console.log('NATIVE_BRIDGE_PASS: verified Windows pipe, untrusted process rejection, candidate row, repeat ACK');
-  if (toolRoot) console.log('ANALYSIS_SMOKE_PASS: public page, candidate media fallback, private URL rejected in the hidden WebView');
+  if (toolRoot) {
+    console.log('ANALYSIS_SMOKE_PASS: public page, candidate media fallback, private URL rejected in the hidden WebView');
+    const downloads = join(root, 'Downloads');
+    const files = readdirSync(downloads);
+    assert.deepEqual(new Set(files), new Set(['flower.mp4', 'flower (1).mp4']));
+    assert.ok(files.every(file => statSync(join(downloads, file)).size > 0));
+    console.log('DOWNLOAD_SMOKE_PASS: two requested downloads, unique output files, opt-in notification dispatch');
+    if (process.env.DM_R5_TEST_WINDOWS_NOTIFICATION === '1') {
+      console.log('WINDOWS_NOTIFICATION_ACCEPTED: Windows Shell accepted one enabled completion notification');
+    }
+  }
 } finally { if (app.exitCode === null) app.kill(); }

@@ -1,6 +1,11 @@
 #[cfg(feature = "smoke-test")]
 #[tauri::command]
-fn smoke_ready(app: tauri::AppHandle, window: tauri::WebviewWindow, mounted: bool) {
+fn smoke_ready(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    mounted: bool,
+    diagnostics: Option<String>,
+) {
     // A real native WebView window and the mounted Vue page must both exist.
     #[cfg(windows)]
     let native_window_exists = window.hwnd().is_ok();
@@ -13,6 +18,8 @@ fn smoke_ready(app: tauri::AppHandle, window: tauri::WebviewWindow, mounted: boo
         && matches!(window.is_visible(), Ok(false));
     if passed {
         println!("SMOKE_PASS: native window, Vue mount, frontend-to-Rust IPC");
+    } else if let Some(diagnostics) = diagnostics {
+        eprintln!("SMOKE_FAILURE: {diagnostics}");
     }
     app.exit(if passed { 0 } else { 1 });
 }
@@ -70,7 +77,7 @@ pub fn run() {
                 std::thread::spawn(move || {
                     let timeout =
                         if std::env::var("DM_SMOKE_PHASE").as_deref() == Ok("bridge-analysis") {
-                            95
+                            140
                         } else {
                             30
                         };
@@ -101,32 +108,16 @@ pub fn run() {
             browser::browser_unregister,
             browser::open_extension_folder,
             browser::open_chrome_extensions,
-            browser::open_download_folder
+            browser::open_download_folder,
+            #[cfg(feature = "smoke-test")]
+            bridge::smoke_bridge_received,
+            #[cfg(feature = "smoke-test")]
+            download::notification::smoke_notification_count,
+            #[cfg(feature = "smoke-test")]
+            smoke_phase,
+            #[cfg(feature = "smoke-test")]
+            smoke_ready
         ]);
-    #[cfg(feature = "smoke-test")]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        default_download_directory,
-        pick_download_directory,
-        validate_download_directory,
-        load_settings,
-        save_settings,
-        recover_settings,
-        analysis::tool_diagnostics,
-        analysis::analyze_url,
-        analysis::analyze_candidate,
-        browser::browser_runtime,
-        browser::browser_begin_test,
-        browser::browser_connection_status,
-        bridge::received_candidates,
-        browser::browser_register,
-        browser::browser_unregister,
-        browser::open_extension_folder,
-        browser::open_chrome_extensions,
-        browser::open_download_folder,
-        bridge::smoke_bridge_received,
-        smoke_phase,
-        smoke_ready
-    ]);
 
     builder
         .build(tauri::generate_context!())
@@ -185,11 +176,16 @@ fn smoke_phase() -> String {
 
 #[tauri::command]
 fn recover_settings(
+    app: tauri::AppHandle,
     store: tauri::State<std::sync::Mutex<settings::Store>>,
     bridge: tauri::State<std::sync::Arc<bridge::Bridge>>,
+    queue: tauri::State<Arc<download::queue::Queue>>,
 ) -> Result<settings::Snapshot, String> {
     let snapshot = store.lock().map_err(|_| "SETTINGS_BUSY")?.recover()?;
     bridge.invalidate();
+    queue
+        .inner()
+        .set_limit(&app, snapshot.settings.concurrent_downloads);
     Ok(snapshot)
 }
 
@@ -206,18 +202,22 @@ fn load_settings(
 
 #[tauri::command]
 fn save_settings(
+    app: tauri::AppHandle,
     settings: settings::Settings,
     store: tauri::State<std::sync::Mutex<settings::Store>>,
     bridge: tauri::State<std::sync::Arc<bridge::Bridge>>,
+    queue: tauri::State<Arc<download::queue::Queue>>,
 ) -> Result<settings::Settings, String> {
     let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
     let id_changed = store
         .current_settings()
         .is_ok_and(|saved| saved.browser_extension_id != settings.browser_extension_id);
     let saved = store.save(settings)?;
+    drop(store);
     if id_changed {
         bridge.invalidate();
     }
+    queue.inner().set_limit(&app, saved.concurrent_downloads);
     Ok(saved)
 }
 

@@ -15,6 +15,7 @@ use std::{
 };
 use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
+pub(crate) mod notification;
 pub mod queue;
 use queue::{Control, Work};
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
@@ -397,10 +398,13 @@ fn transfer(
                 update(value);
             }
         },
-        || control.interrupted(),
+        || control.interrupted() || proxy.limited(),
     );
     if proxy.blocked() {
         return Err("URL_NOT_ALLOWED");
+    }
+    if proxy.limited() {
+        return Err("DOWNLOAD_LIMIT");
     }
     let output = output.map_err(|error| match error {
         process::RunError::Interrupted => "DOWNLOAD_INTERRUPTED",

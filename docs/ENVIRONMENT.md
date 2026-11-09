@@ -129,3 +129,8 @@
 
 - 같은 Windows x64 개발 환경 A의 `D:\ai_workspace\dmVideoDownloader`에서 검증했다. 개발용 Windows yt-dlp 2026.10.26과 FFmpeg 9.0.2 essentials를 `.test-output/r4-dependencies/tools`에 준비했다. [yt-dlp 릴리스](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26)와 [FFmpeg Windows 빌드](https://www.gyan.dev/ffmpeg/builds/)가 게시한 SHA-256 값으로 받은 파일을 검증했다.
 - TEST_PLAN 11절의 실제 yt-dlp/FFmpeg 테스트 7개 PASS. `DM_R4_TOOL_ROOT`를 지정한 `npm run verify`에서 JS/Rust 단위 테스트 65개, 숨김 앱과 Native Host 스모크, 일반 앱·확장 빌드 PASS. 공개 자산은 [MDN HTML5 예제](https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/extra-video-features.html), [CC0 MP4](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4), [Shaka 예제 목록](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist), [HTTPBin](https://httpbin.org/)을 사용했다.
+
+### R5 다운로드 엔진 검증 (2026-11-09)
+
+- 같은 Windows x64 개발 환경 A와 기존 검증 도구를 사용했다. `DM_R4_TOOL_ROOT`와 `DM_R5_TEST_WINDOWS_NOTIFICATION=1`을 설정한 `npm run verify`에서 JS/Rust 단위 테스트 72개, 숨김 WebView·Native Host 통합, 앱·확장 빌드 PASS. 별도 창 조작 없이 Windows Shell이 완료 알림 한 건을 수락한 반환값을 확인했다.
+- TEST_PLAN 12절의 별도 실도구 회귀 12개 PASS. 공개 MP4, Sintel DASH 분리 트랙, HTTP 503/401 응답과 일시정지 파일 정리를 검증했다. 숨김 WebView 통합에서 저장한 MP4 2개도 FFmpeg로 별도 디코딩했다. [공개 Sintel 샘플 출처](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist)
