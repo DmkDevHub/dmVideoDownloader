@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R4-03] analyze selected candidates with a bounded media fallback
+
+- 후보 행에서 분석을 요청하면 저장된 페이지 주소를 우선 사용한다. 미지원·포맷 없음에서만 검증된 감지 주소를 한 번 시도하고 결과에 경로를 표시한다. 실제 example.org 미지원→공개 MP4 포맷 확인과 우선 경로·타임아웃·내부 주소 분기 테스트 PASS. 타입 검사 통과.
+
 ## 2026-11-09 — [R4-02] analyze public URLs through a guarded proxy
 
 - 공개 MDN HTML5 페이지의 MP4·WebM 포맷 2개와 직접 MP4 1개를 Windows 실제 yt-dlp로 확인했다. 직접 URL 분석과 결과 표를 연결했다. 사설 주소 CONNECT/HTTP 차단, 혼합 DNS 응답 거부, 검증한 IP로 연결, 메타데이터에서 URL·헤더 제외 테스트 PASS. 범용·HTML5 추출기를 사용하며 HTTPS 터널 내부는 해석하지 않는다.

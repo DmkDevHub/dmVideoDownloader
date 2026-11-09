@@ -35,6 +35,15 @@ pub struct Format {
 pub struct Report {
     pub title: String,
     pub formats: Vec<Format>,
+    pub source: Source,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Source {
+    Direct,
+    Page,
+    Media,
 }
 
 fn format_tag(value: Option<String>, max: usize) -> Option<String> {
@@ -76,7 +85,34 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
     if formats.is_empty() {
         return Err("NO_FORMATS");
     }
-    Ok(Report { title, formats })
+    Ok(Report {
+        title,
+        formats,
+        source: Source::Direct,
+    })
+}
+
+pub fn candidate(
+    page: &str,
+    media: Option<&str>,
+    mut attempt: impl FnMut(&str) -> Result<Report, &'static str>,
+) -> Result<Report, &'static str> {
+    match attempt(page) {
+        Ok(mut report) => {
+            report.source = Source::Page;
+            Ok(report)
+        }
+        Err(reason @ ("UNSUPPORTED_URL" | "NO_FORMATS")) => {
+            let media = media.filter(|address| *address != page).ok_or(reason)?;
+            if proxy::target(media).is_none() {
+                return Err("URL_NOT_ALLOWED");
+            }
+            let mut report = attempt(media)?;
+            report.source = Source::Media;
+            Ok(report)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub struct Analyzer {
@@ -147,7 +183,17 @@ impl Analyzer {
             _ => "YT_DLP_FAILED",
         })?;
         if !output.success {
-            return Err("ANALYSIS_FAILED");
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(
+                if error
+                    .lines()
+                    .any(|line| line.starts_with("ERROR: Unsupported URL:"))
+                {
+                    "UNSUPPORTED_URL"
+                } else {
+                    "ANALYSIS_FAILED"
+                },
+            );
         }
         report(&output.stdout)
     }
@@ -163,6 +209,64 @@ mod tests {
         assert_eq!(json["formats"][0]["height"], 720);
         assert!(!json.to_string().contains("secret"));
         assert!(matches!(report(br#"{"formats":[]}"#), Err("NO_FORMATS")));
+    }
+
+    #[test]
+    fn candidate_only_falls_back_for_unsupported_pages_or_missing_formats() {
+        let page = "https://example.org/page";
+        let media = "https://example.org/video.mp4";
+        for reason in [
+            "UNSUPPORTED_URL",
+            "NO_FORMATS",
+            "URL_NOT_ALLOWED",
+            "ANALYSIS_TIMEOUT",
+            "ANALYSIS_FAILED",
+        ] {
+            let mut calls = Vec::new();
+            let result = candidate(page, Some(media), |address| {
+                calls.push(address.to_owned());
+                if address == page {
+                    Err(reason)
+                } else {
+                    report(br#"{"formats":[{"format_id":"1"}]}"#)
+                }
+            });
+            if matches!(reason, "UNSUPPORTED_URL" | "NO_FORMATS") {
+                assert_eq!(result.unwrap().source, Source::Media);
+                assert_eq!(calls, [page, media]);
+            } else {
+                assert_eq!(result.err(), Some(reason));
+                assert_eq!(calls, [page]);
+            }
+        }
+        let result = candidate(page, Some(media), |address| {
+            assert_eq!(address, page);
+            report(br#"{"formats":[{"format_id":"1"}]}"#)
+        });
+        assert_eq!(result.unwrap().source, Source::Page);
+        assert_eq!(
+            candidate(page, Some("http://127.0.0.1/x"), |_| Err("NO_FORMATS")).err(),
+            Some("URL_NOT_ALLOWED")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_candidate_media_fallback() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let analyzer = Analyzer::open(&root).unwrap();
+        let result = candidate(
+            "https://example.org/",
+            Some("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"),
+            |address| analyzer.analyze(address),
+        )
+        .unwrap();
+        assert_eq!(result.source, Source::Media);
+        assert!(result
+            .formats
+            .iter()
+            .any(|format| format.container.as_deref() == Some("mp4")));
+        println!("CANDIDATE_FALLBACK_PASS");
     }
 
     #[test]

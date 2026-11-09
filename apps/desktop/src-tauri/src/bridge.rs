@@ -43,6 +43,14 @@ pub fn received_candidates(bridge: tauri::State<Arc<Bridge>>) -> Result<Vec<Cand
         .collect())
 }
 impl Bridge {
+    pub fn candidate(&self, id: &str) -> Result<Candidate, &'static str> {
+        let inbox = self.inbox.lock().map_err(|_| "BRIDGE_BUSY")?;
+        inbox
+            .iter()
+            .find(|(request_id, _)| request_id == id)
+            .map(|(_, candidate)| candidate.clone())
+            .ok_or("CANDIDATE_MISSING")
+    }
     pub fn new() -> Self {
         Self {
             inbox: Mutex::new(Vec::new()),

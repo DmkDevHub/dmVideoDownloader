@@ -5,20 +5,26 @@ import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
 import { connectionLabel, registrationLabel, type BrowserRuntime, type ConnectionStatus } from './browserConnection';
-import { analysisError, type AnalysisReport } from './analysis';
+import { analysisError, analysisSource, type AnalysisReport } from './analysis';
 
 const address = ref('');
 const analysis = ref<AnalysisReport>();
 const analysisBusy = ref(false);
 const analysisMessage = ref('');
-async function analyzeAddress() {
-  if (analysisBusy.value || !address.value.trim()) return;
+const analyzingCandidate = ref<string>();
+async function runAnalysis(command: 'analyze_url' | 'analyze_candidate', args: Record<string, string>) {
+  if (analysisBusy.value) return;
   analysisBusy.value = true;
+  analyzingCandidate.value = args.id;
   analysis.value = undefined;
   analysisMessage.value = '';
-  try { analysis.value = await invoke<AnalysisReport>('analyze_url', { address: address.value.trim() }); }
+  try { analysis.value = await invoke<AnalysisReport>(command, args); }
   catch (error) { analysisMessage.value = analysisError(error); }
-  finally { analysisBusy.value = false; }
+  finally { analysisBusy.value = false; analyzingCandidate.value = undefined; }
+}
+function analyzeAddress() {
+  const input = address.value.trim();
+  if (input) return runAnalysis('analyze_url', { address: input });
 }
 const editor = ref<ReturnType<typeof createSettingsEditor>>();
 const startupError = ref('');
@@ -196,20 +202,21 @@ onMounted(async () => {
       <label for="video-url">영상 URL 직접 입력</label>
       <form class="input-row" @submit.prevent="analyzeAddress"><input id="video-url" v-model="address" :disabled="analysisBusy" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" maxlength="8192" /><button :disabled="analysisBusy || !address.trim()">{{ analysisBusy ? '분석 중…' : '분석' }}</button></form>
       <p class="hint">공개 영상의 포맷을 확인합니다.</p>
-      <p v-if="analysisMessage" role="alert" class="error">{{ analysisMessage }}</p>
-      <div v-if="analysis" aria-label="포맷 분석 결과" data-analysis-result>
-        <h3>{{ analysis.title }}</h3>
-        <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>화질</th></tr></thead><tbody>
-          <tr v-for="(format, index) in analysis.formats" :key="`${format.id}-${index}`"><td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ format.height ? `${format.height}p` : '미확인' }}</td></tr>
-        </tbody></table></div>
-      </div>
       <div class="status-row"><span class="badge">Chrome 연동: {{ connectionLabel(connection) }}</span><span>자동 감지 설정: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐' : '꺼짐') : '설정 확인 필요' }}</span></div>
     </section>
     <section class="panel" aria-labelledby="candidates-heading">
       <h2 id="candidates-heading">감지된 영상</h2>
-      <div class="table-scroll"><table><thead><tr><th>제목</th><th>종류</th><th>화질</th><th>분석 상태</th></tr></thead><tbody>
+      <div class="table-scroll"><table><thead><tr><th>제목</th><th>종류</th><th>화질</th><th>작업</th></tr></thead><tbody>
         <tr v-if="!candidates.length"><td colspan="4" class="empty">Chrome 확장 팝업에서 선택한 영상이 여기에 표시됩니다.</td></tr>
-        <tr v-for="candidate in candidates" :key="candidate.id" data-received-candidate><td>{{ candidate.title }}</td><td>{{ candidate.sourceType.toUpperCase() }}</td><td>미확인</td><td>후보 수신 · 분석 대기</td></tr>
+        <tr v-for="candidate in candidates" :key="candidate.id" data-received-candidate><td>{{ candidate.title }}</td><td>{{ candidate.sourceType.toUpperCase() }}</td><td>미확인</td><td><button type="button" :disabled="analysisBusy" @click="runAnalysis('analyze_candidate', { id: candidate.id })">{{ analyzingCandidate === candidate.id ? '분석 중…' : '분석' }}</button></td></tr>
+      </tbody></table></div>
+    </section>
+    <p v-if="analysisMessage" role="alert" class="error">{{ analysisMessage }}</p>
+    <section v-if="analysis" class="panel" aria-label="포맷 분석 결과" data-analysis-result>
+      <h2>{{ analysis.title }}</h2>
+      <p class="hint" role="status">{{ analysisSource[analysis.source] }}에서 포맷 {{ analysis.formats.length }}개를 확인했습니다.</p>
+      <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>화질</th></tr></thead><tbody>
+        <tr v-for="(format, index) in analysis.formats" :key="`${format.id}-${index}`"><td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ format.height ? `${format.height}p` : '미확인' }}</td></tr>
       </tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="jobs-heading">

@@ -57,3 +57,28 @@ pub async fn analyze_url(
     .map_err(|_| "ANALYSIS_FAILED")?
     .map_err(str::to_owned)
 }
+
+#[tauri::command]
+pub async fn analyze_candidate(
+    id: String,
+    store: tauri::State<'_, std::sync::Mutex<crate::settings::Store>>,
+    bridge: tauri::State<'_, std::sync::Arc<crate::bridge::Bridge>>,
+) -> Result<extract::Report, String> {
+    let selected = bridge.candidate(&id)?;
+    let root = store
+        .lock()
+        .map_err(|_| "SETTINGS_BUSY")?
+        .root()
+        .to_path_buf();
+    let active = Active::acquire()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _active = active;
+        let analyzer = extract::Analyzer::open(&root)?;
+        extract::candidate(&selected.page_url, selected.media_url.as_deref(), |url| {
+            analyzer.analyze(url)
+        })
+    })
+    .await
+    .map_err(|_| "ANALYSIS_FAILED")?
+    .map_err(str::to_owned)
+}
