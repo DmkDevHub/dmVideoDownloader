@@ -1,0 +1,11 @@
+[package]
+name = "dm-video-native-host"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "VideoNativeHost"
+path = "src/main.rs"
+
+[dependencies]
+dm-video-protocol = { path = "../shared/protocol" }
