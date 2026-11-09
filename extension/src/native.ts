@@ -1,5 +1,6 @@
 import { publicUrl, type Candidate } from './media';
-export const HOST_NAME = 'com.browser_video_downloader.host';
+import { HOST_NAME, validateEnvelope, type Envelope } from '../../shared/protocol';
+export { HOST_NAME };
 export interface NativeResult { ok: boolean; code: string; safeMessage: string; verifiedAt?: string }
 const errors: Record<string, string> = {
   HOST_NOT_REGISTERED: '호스트 등록을 확인하세요.',
@@ -22,7 +23,6 @@ export const failure = (code: string): NativeResult => {
   return { ok: false, code: safeCode, safeMessage: errors[safeCode] };
 };
 type Runtime = Pick<typeof chrome.runtime, 'connectNative'> & Partial<Pick<typeof chrome.runtime, 'lastError'>>;
-type Envelope = { version: 1; type: string; requestId: string; payload: Record<string, unknown> };
 export function nativeTransaction(runtime: Runtime, initial: Envelope, timeout: number,
   receive: (message: Envelope, send: (message: Envelope) => void) => NativeResult | undefined,
   timeoutCode = 'IPC_TIMEOUT'): Promise<NativeResult> {
@@ -41,10 +41,10 @@ export function nativeTransaction(runtime: Runtime, initial: Envelope, timeout: 
       port.onMessage.addListener((input: unknown) => {
         if (done) return;
         try {
-          if (!input || typeof input !== 'object' || Array.isArray(input) || new TextEncoder().encode(JSON.stringify(input)).byteLength > 65_536) { finish(failure('INVALID_PAYLOAD')); return; }
+          const validation = validateEnvelope(input);
+          if (validation) { finish(failure(validation)); return; }
           const message = input as Envelope;
-          if (message.version !== 1) { finish(failure('UNSUPPORTED_VERSION')); return; }
-          if (message.requestId !== initial.requestId || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) { finish(failure('INVALID_PAYLOAD')); return; }
+          if (message.requestId !== initial.requestId) { finish(failure('INVALID_PAYLOAD')); return; }
           if (message.type === 'ERROR') {
             finish(failure(typeof message.payload.code === 'string' ? message.payload.code : 'INVALID_PAYLOAD')); return;
           }

@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-01] validate protocol v1 at both language boundaries
+
+- TC-09 스키마 부분 PASS. Rust/TypeScript 공통 입력 15개, 잘린 JSON·중복 키·버전·URL 경계 검증. 확장 타입 검사와 Vitest 27개 PASS.
+
 ## 2026-11-06 — [R2-07] 실제 확장 ID와 연결 테스트 UI
 
 - 변경: 실제 runtime.id 표시·검증 후 복사/실패 안내, 연결 테스트 대기/결과·마지막 성공 시각과 현재 확인 필요 상태 분리. 단일 connectNative 포트의 프로토콜 v1 PING/PONG→CONNECTION_TEST_RESULT/ACK, 새 요청 ID·30초 총 만료·동시 테스트 차단. ACK 전에는 성공하지 않고 끝나면 포트를 닫음. 오류는 정적 안내만 표시.
