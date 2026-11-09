@@ -62,6 +62,11 @@ onMounted(async () => {
         const recovered = await invoke<SettingsSnapshot>('recover_settings');
         smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
         applySnapshot(recovered);
+      } else if (phase === 'bridge') {
+        for (let attempt = 0; attempt < 100 && !smokePassed; attempt++) {
+          smokePassed = await invoke<boolean>('smoke_bridge_received');
+          if (!smokePassed) await new Promise(resolve => setTimeout(resolve, 100));
+        }
       } else if (phase === 'future') {
         smokePassed = !snapshot.canSave && !snapshot.canRecover && snapshot.notice === 'UNSUPPORTED_SETTINGS_VERSION';
       }

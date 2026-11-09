@@ -341,3 +341,6 @@ pub fn request_id_hint(bytes: &[u8]) -> Option<String> {
     let wire: Wire = serde_json::from_slice(bytes).ok()?;
     valid_id(&wire.request_id).then_some(wire.request_id)
 }
+
+#[cfg(windows)]
+pub mod pipe;

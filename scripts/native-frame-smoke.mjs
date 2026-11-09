@@ -10,7 +10,7 @@ const encode = value => {
   return Buffer.concat([prefix, bytes]);
 };
 const ping = requestId => ({ version: 1, type: 'PING', requestId, payload: { purpose: 'connection_test' } });
-const processResult = spawnSync(host, [], {
+const processResult = spawnSync(host, ['chrome-extension://' + 'a'.repeat(32) + '/'], {
   input: Buffer.concat([encode(ping('first')), encode({ ...ping('second'), version: 99 })]),
   timeout: 5000, windowsHide: true,
 });
@@ -25,7 +25,7 @@ for (const [id, code] of [['first', 'APP_NOT_RUNNING'], ['second', 'UNSUPPORTED_
   output = output.subarray(len + 4);
 }
 assert.equal(output.length, 0);
-const malformed = spawnSync(host, [], { input: Buffer.alloc(4), timeout: 5000, windowsHide: true });
+const malformed = spawnSync(host, ['chrome-extension://' + 'a'.repeat(32) + '/'], { input: Buffer.alloc(4), timeout: 5000, windowsHide: true });
 assert.equal(malformed.status, 1);
 assert.equal(malformed.stdout.length, 0);
 console.log('NATIVE_FRAME_PASS: Windows EXE, consecutive frames, correlated errors and stdout isolation');

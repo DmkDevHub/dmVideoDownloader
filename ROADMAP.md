@@ -58,7 +58,8 @@
   > 2026-11-09 / TC-09 스키마 부분 PASS. Rust/TypeScript 공통 입력 15개, 잘린 JSON·중복 키·버전·URL 경계 검증. 확장 타입 검사와 Vitest 27개 PASS.
 - [x] **R3-02** Native Messaging 호스트의 stdio JSON 길이 프레이밍 구현. (완료: 프로토콜 테스트)
   > 2026-11-09 / Rust 프로토콜/프레임 테스트 3개와 Windows Host EXE 프로세스 검증 PASS. 분할 읽기·연속 프레임·UTF-8·0/초과/잘린 길이·stdout 분리 확인. 앱 전달은 다음 항목.
-- [ ] **R3-03** Native Host ↔ Tauri 로컬 IPC 브리지 구축. (완료: 앱에서 수신)
+- [x] **R3-03** Native Host ↔ Tauri 로컬 IPC 브리지 구축. (완료: 앱에서 수신)
+  > 2026-11-09 / 실제 Windows Native Host EXE→Named Pipe→숨김 Tauri 앱 수신과 후보 ACK PASS. 설치 폴더별 pipe, 현재 사용자 ACL·원격 접속 거부·양방향 프로세스 경로와 SID 검사·제한 시간 적용. 데스크톱 단위 8개와 기본 smoke 4개 PASS. Chrome 등록은 후속 항목.
 - [ ] **R3-04** 실제 확장 ID 검증·단일 allowlist, 고정 Host 이름, 절대경로 매니페스트·HKCU 등록/해제 구현. (완료: TC-09/17/19)
 - [ ] **R3-05** 포터블 이동 감지·현재 경로 재등록 및 확장 재로드/ID 변경 안내. (완료: TC-12/18)
 - [ ] **R3-06** 확장 다운로드 클릭 → EXE 후보 전달의 실사용 통합 검증. (완료: 앱에 항목 표시)

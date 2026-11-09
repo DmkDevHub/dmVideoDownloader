@@ -641,12 +641,25 @@ dependencies = [
 name = "dm-video-desktop"
 version = "0.1.0"
 dependencies = [
+ "dm-video-protocol",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tempfile",
+]
+
+[[package]]
+name = "dm-video-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+ "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

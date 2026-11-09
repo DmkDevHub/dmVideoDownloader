@@ -31,6 +31,9 @@ pub fn run() {
                 .ok_or("missing executable directory")?
                 .to_path_buf();
             let directory = default_download_directory(app.handle().clone())?;
+            let bridge = std::sync::Arc::new(bridge::Bridge::new());
+            let _ = bridge.start(&root);
+            app.manage(bridge);
             app.manage(std::sync::Mutex::new(settings::Store::new(root, directory)));
             #[cfg(feature = "smoke-test")]
             {
@@ -66,6 +69,7 @@ pub fn run() {
         browser::open_extension_folder,
         browser::open_chrome_extensions,
         browser::open_download_folder,
+        bridge::smoke_bridge_received,
         smoke_phase,
         smoke_ready
     ]);
@@ -91,6 +95,7 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
         .map(|path| path.join("Videos").to_string_lossy().into_owned())
         .map_err(|_| "DOWNLOAD_DIRECTORY_UNAVAILABLE".into())
 }
+mod bridge;
 mod browser;
 mod folders;
 mod settings;
