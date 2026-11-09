@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import type { Settings } from './settings';
 import BrowserConnection from './BrowserConnection.vue';
 import type { BrowserRuntime, ConnectionStatus } from './browserConnection';
@@ -7,6 +8,21 @@ import type { BrowserRuntime, ConnectionStatus } from './browserConnection';
 defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string; savedId?: string; runtime?: BrowserRuntime; status?: ConnectionStatus }>();
 defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: []; registration: [action: 'register' | 'repair' | 'unregister' | 'test'] }>();
 const dialog = ref<HTMLDialogElement>();
+type ToolStatus = { state: 'ready' | 'missing' | 'invalidPath' | 'failed' | 'timeout' | 'unsupported'; version: string | null };
+const toolResult = ref<{ ytDlp: ToolStatus; ffmpeg: ToolStatus }>();
+const checkingTools = ref(false);
+const toolError = ref('');
+async function checkTools() {
+  checkingTools.value = true;
+  toolError.value = '';
+  try { toolResult.value = await invoke('tool_diagnostics'); }
+  catch { toolError.value = '도구 상태를 읽지 못했습니다.'; }
+  finally { checkingTools.value = false; }
+}
+function toolLabel(tool: ToolStatus) {
+  const labels = { ready: '사용 가능', missing: '파일 없음', invalidPath: '경로 확인 필요', failed: '실행 실패', timeout: '응답 시간 초과', unsupported: '지원 버전 확인 필요' };
+  return tool.version ? `${labels[tool.state]} · ${tool.version}` : labels[tool.state];
+}
 onMounted(() => dialog.value?.showModal());
 </script>
 
@@ -32,6 +48,13 @@ onMounted(() => dialog.value?.showModal());
         <label class="check"><input v-model="draft.browserAutoDetect" type="checkbox" />브라우저 영상 자동 감지</label>
         <p class="hint">저장 후 연결 테스트를 완료하면 확장이 이 설정을 읽습니다.</p>
         <label class="check"><input v-model="draft.completionNotification" type="checkbox" />다운로드 완료 알림</label>
+      </fieldset>
+      <fieldset :disabled="busy || checkingTools">
+        <legend>영상 도구</legend>
+        <p class="hint">실행 파일 옆 tools 폴더의 yt-dlp.exe와 ffmpeg.exe를 확인합니다.</p>
+        <button type="button" @click="checkTools">{{ checkingTools ? '확인 중…' : '도구 확인' }}</button>
+        <p v-if="toolResult" role="status">yt-dlp {{ toolLabel(toolResult.ytDlp) }} · FFmpeg {{ toolLabel(toolResult.ffmpeg) }}</p>
+        <p v-if="toolError" role="alert">{{ toolError }}</p>
       </fieldset>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <BrowserConnection v-model:extension-id="draft.browserExtensionId" :saved-id="savedId ?? ''" :busy="busy" :can-save="canSave !== false" :runtime="runtime" :status="status" @registration="$emit('registration', $event)" />

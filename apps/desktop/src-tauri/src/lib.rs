@@ -77,6 +77,7 @@ pub fn run() {
             load_settings,
             save_settings,
             recover_settings,
+            analysis::tool_diagnostics,
             browser::browser_runtime,
             browser::browser_begin_test,
             browser::browser_connection_status,
@@ -95,6 +96,7 @@ pub fn run() {
         load_settings,
         save_settings,
         recover_settings,
+        analysis::tool_diagnostics,
         browser::browser_runtime,
         browser::browser_begin_test,
         browser::browser_connection_status,
@@ -130,6 +132,7 @@ fn default_download_directory(app: tauri::AppHandle) -> Result<String, String> {
         .map(|path| path.join("Videos").to_string_lossy().into_owned())
         .map_err(|_| "DOWNLOAD_DIRECTORY_UNAVAILABLE".into())
 }
+mod analysis;
 mod bridge;
 mod browser;
 mod connection;

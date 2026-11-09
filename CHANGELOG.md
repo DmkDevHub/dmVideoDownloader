@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R4-01] diagnose portable media tools
+
+- TC-13 PASS. 실행 파일 옆 tools의 두 도구를 제한 시간과 출력 상한 안에서 검사하며 누락·경로 오류·실행 실패·지원 버전을 구분한다. Windows 실제 yt-dlp 2026.10.26과 FFmpeg 9.0.2 버전 응답 확인. Rust 진단 테스트, 타입 검사와 데스크톱 Vitest 13개 통과.
+
 ## 2026-11-09 — [R3-09] verify ownership and repair across Windows registry views
 
 - TC-19/20 PASS. 실제 WOW64 분리 키에서 양쪽 등록 충돌, 소유 뷰만 해제, 다른 복사본·별도 값 보존, 명시 복구·반복 등록 확인. 설치 위치를 옮긴 뒤 실제 Chrome 왕복과 설정 교환 재검증 및 임시 HKCU 정리 PASS. npm run verify 단위 56개·숨김 앱 4회·프로세스 검사·빌드 PASS. 별도 Windows 사용자와 조직 정책, 수동 설치·시각 인수는 미검증.
