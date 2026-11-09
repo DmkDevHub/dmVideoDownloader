@@ -1,41 +1,23 @@
 use crate::analysis::{extract, failure, process, proxy, tools};
 use crate::{
-    bridge::Bridge,
     folders,
-    settings::{Filename, Format as Container, Quality, Settings, Store},
+    settings::{Filename, Format as Container, Quality},
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     fs, io,
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::Command,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::Arc,
     time::Duration,
 };
-use tauri::{ipc::Channel, State};
 use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
+pub mod queue;
+use queue::{Control, Work};
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
-static ACTIVE: AtomicBool = AtomicBool::new(false);
-
-struct Active;
-impl Drop for Active {
-    fn drop(&mut self) {
-        ACTIVE.store(false, Ordering::Release);
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
-pub enum Request {
-    Direct { address: String },
-    Candidate { id: String },
-}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +25,6 @@ pub struct Progress {
     downloaded: u64,
     total: Option<u64>,
     bytes_per_second: Option<f64>,
-    merging: bool,
 }
 
 fn progress(line: &[u8]) -> Option<Progress> {
@@ -63,62 +44,37 @@ fn progress(line: &[u8]) -> Option<Progress> {
             .or(estimate)
             .filter(|total| *total >= downloaded && *total > 0),
         bytes_per_second,
-        merging: false,
     })
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Saved {
+struct Saved {
     filename: String,
     height: Option<u32>,
 }
 
-#[tauri::command]
-pub async fn download_video(
-    request: Request,
-    updates: Channel<Progress>,
-    store: State<'_, Mutex<Store>>,
-    bridge: State<'_, Arc<Bridge>>,
-) -> Result<Saved, String> {
-    let (page, media) = match request {
-        Request::Direct { address } => (address, None),
-        Request::Candidate { id } => {
-            let candidate = bridge.candidate(&id)?;
-            (candidate.page_url, candidate.media_url)
-        }
-    };
-    if proxy::target(&page).is_none() {
-        return Err("URL_NOT_ALLOWED".into());
-    }
-    let (root, settings) = {
-        let store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
-        (store.root().to_path_buf(), store.current_settings()?)
-    };
-    ACTIVE
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-        .map_err(|_| "DOWNLOAD_BUSY")?;
-    let active = Active;
-    tauri::async_runtime::spawn_blocking(move || {
-        let _active = active;
-        download(&root, &settings, &page, media.as_deref(), move |update| {
-            let _ = updates.send(update);
-        })
-    })
-    .await
-    .map_err(|_| "DOWNLOAD_FAILED")?
-    .map_err(str::to_owned)
+enum Update {
+    Downloading { title: String, height: Option<u32> },
+    Progress(Progress),
+    Merging,
 }
 
 fn download(
-    root: &Path,
-    settings: &Settings,
-    page: &str,
-    media: Option<&str>,
-    update: impl Fn(Progress) + Send + Sync + 'static,
+    work: &Work,
+    control: &Control,
+    update: impl Fn(Update) + Send + Sync + 'static,
 ) -> Result<Saved, &'static str> {
+    let (root, settings, page, media) = (
+        &work.root,
+        &work.settings,
+        work.page.as_str(),
+        work.media.as_deref(),
+    );
+    control.check()?;
     let analyzer = extract::Analyzer::open(root)?;
-    let report = extract::candidate(page, media, |address| analyzer.analyze(address))?;
+    let report = extract::candidate(page, media, |address| {
+        analyzer.analyze_interruptible(address, || control.interrupted())
+    })?;
+    control.check()?;
     let format = choose_video(
         report.formats.iter().filter(|format| {
             matches!(
@@ -184,8 +140,14 @@ fn download(
         .map_err(|_| "DIRECTORY_NOT_WRITABLE")?;
     let video = staging.path().join(format!("source.{ext}"));
     let update = Arc::new(update);
+    update(Update::Downloading {
+        title: report.title,
+        height: format.height,
+    });
     let video_update = Arc::clone(&update);
-    transfer(&analyzer, format, &video, move |value| video_update(value))?;
+    transfer(&analyzer, format, &video, control, move |value| {
+        video_update(Update::Progress(value))
+    })?;
     let audio_file = audio
         .map(|audio| -> Result<PathBuf, &'static str> {
             let ext = audio
@@ -194,19 +156,16 @@ fn download(
                 .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
             let file = staging.path().join(format!("audio.{ext}"));
             let audio_update = Arc::clone(&update);
-            transfer(&analyzer, audio, &file, move |value| audio_update(value))?;
+            transfer(&analyzer, audio, &file, control, move |value| {
+                audio_update(Update::Progress(value))
+            })?;
             Ok(file)
         })
         .transpose()?;
-    update(Progress {
-        downloaded: 0,
-        total: None,
-        bytes_per_second: None,
-        merging: true,
-    });
+    update(Update::Merging);
     let path = staging.path().join(format!("finished.{output_ext}"));
-    remux(&ffmpeg, &video, audio_file.as_deref(), &path)?;
-    let filename = publish(&path, &directory, &stem, output_ext)?;
+    remux(&ffmpeg, &video, audio_file.as_deref(), &path, control)?;
+    let filename = control.commit(|| publish(&path, &directory, &stem, output_ext))?;
     Ok(Saved {
         filename,
         height: format.height,
@@ -321,7 +280,9 @@ fn remux(
     video: &Path,
     audio: Option<&Path>,
     output: &Path,
+    control: &Control,
 ) -> Result<(), &'static str> {
+    folders::check_path(output)?;
     let mut command = Command::new(ffmpeg);
     command.args(["-nostdin", "-v", "error", "-xerror", "-n"]);
     for input in [Some(video), audio].into_iter().flatten() {
@@ -349,12 +310,19 @@ fn remux(
             "copy",
         ])
         .arg(output);
-    let result = process::run(&mut command, TRANSFER_TIMEOUT, 4096, 64 * 1024).map_err(
-        |error| match error {
-            process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
-            _ => "FFMPEG_FAILED",
-        },
-    )?;
+    let result = process::run_with(
+        &mut command,
+        TRANSFER_TIMEOUT,
+        (4096, 64 * 1024),
+        None,
+        |_| {},
+        || control.interrupted(),
+    )
+    .map_err(|error| match error {
+        process::RunError::Interrupted => "DOWNLOAD_INTERRUPTED",
+        process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
+        _ => "FFMPEG_FAILED",
+    })?;
     if !result.success
         || !fs::metadata(output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
     {
@@ -393,8 +361,10 @@ fn transfer(
     analyzer: &extract::Analyzer,
     format: &extract::Format,
     path: &Path,
+    control: &Control,
     mut update: impl FnMut(Progress) + Send + 'static,
 ) -> Result<(), &'static str> {
+    folders::check_path(path)?;
     let media = format.media.as_ref().ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
     let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
     // Construct a new info object. Never pass through extractor metadata, headers, or file paths.
@@ -427,11 +397,13 @@ fn transfer(
                 update(value);
             }
         },
+        || control.interrupted(),
     );
     if proxy.blocked() {
         return Err("URL_NOT_ALLOWED");
     }
     let output = output.map_err(|error| match error {
+        process::RunError::Interrupted => "DOWNLOAD_INTERRUPTED",
         process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
         _ => "DOWNLOAD_FAILED",
     })?;
@@ -473,6 +445,7 @@ fn move_without_replacing(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{Settings, Store};
 
     #[test]
     fn names_are_safe_and_atomic_publication_preserves_existing_files() {
@@ -620,12 +593,18 @@ mod tests {
             .unwrap();
         let (send, receive) = std::sync::mpsc::channel();
         let result = download(
-            &root,
-            &settings,
-            "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-            None,
+            &Work {
+                root: root.clone(),
+                settings,
+                page: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+                    .into(),
+                media: None,
+            },
+            &Control::default(),
             move |value| {
-                send.send(value).unwrap();
+                if let Update::Progress(value) = value {
+                    send.send(value).unwrap();
+                }
             },
         )
         .unwrap();
@@ -649,10 +628,13 @@ mod tests {
         settings.quality = Quality::Q720;
         settings.format = Container::Mp4;
         let result = download(
-            &root,
-            &settings,
-            "https://storage.googleapis.com/shaka-demo-assets/sintel/dash.mpd",
-            None,
+            &Work {
+                root: root.clone(),
+                settings,
+                page: "https://storage.googleapis.com/shaka-demo-assets/sintel/dash.mpd".into(),
+                media: None,
+            },
+            &Control::default(),
             |_| {},
         )
         .unwrap();

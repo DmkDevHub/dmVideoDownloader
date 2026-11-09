@@ -283,12 +283,25 @@ impl Analyzer {
     }
 
     pub fn analyze(&self, address: &str) -> Result<Report, &'static str> {
-        let address = proxy::target(address).ok_or("URL_NOT_ALLOWED")?;
-        let proxy = proxy::Proxy::start().map_err(|_| "ANALYSIS_FAILED")?;
-        self.run(address, proxy)
+        self.analyze_interruptible(address, || false)
     }
 
-    fn run(&self, address: url::Url, proxy: proxy::Proxy) -> Result<Report, &'static str> {
+    pub fn analyze_interruptible(
+        &self,
+        address: &str,
+        interrupted: impl Fn() -> bool,
+    ) -> Result<Report, &'static str> {
+        let address = proxy::target(address).ok_or("URL_NOT_ALLOWED")?;
+        let proxy = proxy::Proxy::start().map_err(|_| "ANALYSIS_FAILED")?;
+        self.run(address, proxy, interrupted)
+    }
+
+    fn run(
+        &self,
+        address: url::Url,
+        proxy: proxy::Proxy,
+        interrupted: impl Fn() -> bool,
+    ) -> Result<Report, &'static str> {
         let mut command = self.command(&proxy);
         command
             .args([
@@ -306,16 +319,19 @@ impl Analyzer {
             ])
             .arg("--")
             .arg(address.as_str());
-        let output = process::run(
+        let output = process::run_with(
             &mut command,
             Duration::from_secs(30),
-            4 * 1024 * 1024,
-            64 * 1024,
+            (4 * 1024 * 1024, 64 * 1024),
+            None,
+            |_| {},
+            interrupted,
         );
         if proxy.blocked() {
             return Err("URL_NOT_ALLOWED");
         }
         let output = output.map_err(|error| match error {
+            RunError::Interrupted => "DOWNLOAD_INTERRUPTED",
             RunError::Timeout => "ANALYSIS_TIMEOUT",
             RunError::OutputLimit => "METADATA_LIMIT",
             _ => "YT_DLP_FAILED",
@@ -434,6 +450,7 @@ mod tests {
         let outcome = analyzer.run(
             proxy::target("http://fixture.example.org/page").unwrap(),
             proxy::Proxy::with_test_fixture(socket).unwrap(),
+            || false,
         );
         assert_eq!(outcome.err(), Some("URL_NOT_ALLOWED"));
         let listener = server.join().unwrap();

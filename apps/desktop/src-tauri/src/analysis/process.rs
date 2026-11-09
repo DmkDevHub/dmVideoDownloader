@@ -46,15 +46,20 @@ pub enum RunError {
     Io,
     Timeout,
     OutputLimit,
+    Interrupted,
 }
 
+type Reader = (
+    mpsc::Receiver<Result<Vec<u8>, RunError>>,
+    thread::JoinHandle<()>,
+);
 fn collect(
     reader: impl Read + Send + 'static,
     limit: usize,
     mut on_line: impl FnMut(&[u8]) + Send + 'static,
-) -> mpsc::Receiver<Result<Vec<u8>, RunError>> {
+) -> Reader {
     let (send, receive) = mpsc::sync_channel(1);
-    thread::spawn(move || {
+    let worker = thread::spawn(move || {
         let result = (|| {
             let mut bytes = Vec::new();
             let mut reader = BufReader::new(reader.take(limit as u64 + 1));
@@ -76,7 +81,7 @@ fn collect(
         })();
         let _ = send.send(result);
     });
-    receive
+    (receive, worker)
 }
 
 pub fn run(
@@ -85,7 +90,14 @@ pub fn run(
     stdout_limit: usize,
     stderr_limit: usize,
 ) -> Result<Output, RunError> {
-    run_with(command, timeout, (stdout_limit, stderr_limit), None, |_| {})
+    run_with(
+        command,
+        timeout,
+        (stdout_limit, stderr_limit),
+        None,
+        |_| {},
+        || false,
+    )
 }
 
 pub fn run_with(
@@ -94,7 +106,11 @@ pub fn run_with(
     limits: (usize, usize),
     input: Option<Vec<u8>>,
     on_line: impl FnMut(&[u8]) + Send + 'static,
+    interrupted: impl Fn() -> bool,
 ) -> Result<Output, RunError> {
+    if interrupted() {
+        return Err(RunError::Interrupted);
+    }
     let scratch = tempfile::tempdir().map_err(|_| RunError::Io)?;
     let job = job()?;
     command
@@ -128,18 +144,22 @@ pub fn run_with(
         let mut stdin = child.stdin.take().expect("piped stdin");
         thread::spawn(move || stdin.write_all(&bytes))
     });
-    let stdout = collect(
+    let (stdout, stdout_worker) = collect(
         child.stdout.take().expect("piped stdout"),
         limits.0,
         on_line,
     );
-    let stderr = collect(child.stderr.take().expect("piped stderr"), limits.1, |_| {});
+    let (stderr, stderr_worker) =
+        collect(child.stderr.take().expect("piped stderr"), limits.1, |_| {});
     let deadline = Instant::now() + timeout;
     let result = (|| {
         let mut out = None;
         let mut err = None;
         let mut status = None;
         loop {
+            if interrupted() {
+                return Err(RunError::Interrupted);
+            }
             if out.is_none() {
                 out = poll(&stdout)?;
             }
@@ -168,10 +188,11 @@ pub fn run_with(
     if result.is_err() {
         let _ = child.wait();
     }
+    let _ = stdout_worker.join();
+    let _ = stderr_worker.join();
     if let Some(writer) = writer {
-        if result.as_ref().is_ok_and(|output| output.success)
-            && !writer.join().is_ok_and(|written| written.is_ok())
-        {
+        let written = writer.join().is_ok_and(|written| written.is_ok());
+        if !written && result.as_ref().is_ok_and(|output| output.success) {
             return Err(RunError::Io);
         }
     }
@@ -183,5 +204,36 @@ fn poll(receiver: &mpsc::Receiver<Result<Vec<u8>, RunError>>) -> Result<Option<V
         Ok(result) => result.map(Some),
         Err(mpsc::TryRecvError::Empty) => Ok(None),
         Err(mpsc::TryRecvError::Disconnected) => Err(RunError::Io),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    #[test]
+    fn interrupts_and_reaps_a_running_windows_process() {
+        let root = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap());
+        let mut command = Command::new(root.join("System32/ping.exe"));
+        command.args(["-t", "127.0.0.1"]);
+        let signal = Arc::new(AtomicBool::new(false));
+        let on_line = Arc::clone(&signal);
+        let result = run_with(
+            &mut command,
+            Duration::from_secs(10),
+            (4096, 4096),
+            None,
+            move |line| {
+                if !line.is_empty() {
+                    on_line.store(true, Ordering::Release);
+                }
+            },
+            || signal.load(Ordering::Acquire),
+        );
+        assert_eq!(result.err(), Some(RunError::Interrupted));
     }
 }

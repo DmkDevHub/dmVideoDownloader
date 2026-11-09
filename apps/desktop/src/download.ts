@@ -3,11 +3,20 @@ import { analysisError } from './analysis';
 import { settingsError } from './settings';
 
 export type DownloadRequest = { kind: 'direct'; address: string } | { kind: 'candidate'; id: string };
-export interface DownloadProgress { downloaded: number; total: number | null; bytesPerSecond: number | null; merging: boolean }
-export interface SavedVideo { filename: string; height: number | null }
+export interface DownloadProgress { downloaded: number; total: number | null; bytesPerSecond: number | null }
+export type DownloadAction = 'pause' | 'resume' | 'cancel' | 'retry';
+export const downloadPhase = {
+  queued: '대기 중', analyzing: '영상 확인 중', downloading: '다운로드 중', merging: '파일 처리 중',
+  retrying: '재시도 대기 중', pausing: '일시정지 중', cancelling: '취소 중', paused: '일시정지',
+  completed: '완료', failed: '실패', cancelled: '취소됨',
+};
+export interface DownloadJob {
+  id: number; title: string; phase: keyof typeof downloadPhase; height: number | null;
+  progress: DownloadProgress | null; filename: string | null; error: string | null; attempt: number; canRetry: boolean;
+}
 
-export function progressLabel(progress?: DownloadProgress) {
-  if (!progress || progress.merging) return '—';
+export function progressLabel(progress: DownloadProgress | null) {
+  if (!progress) return '—';
   const size = progress.total
     ? Math.floor(progress.downloaded / progress.total * 100) + '%'
     : (progress.downloaded / 1048576).toFixed(1) + ' MiB';
@@ -16,7 +25,9 @@ export function progressLabel(progress?: DownloadProgress) {
 
 export function downloadError(error: unknown) {
   switch (error) {
-    case 'DOWNLOAD_BUSY': return '다른 영상을 다운로드하고 있습니다.';
+    case 'DOWNLOAD_QUEUE_FULL': return '다운로드 목록이 가득 찼습니다.';
+    case 'DOWNLOAD_JOB_MISSING': return '다운로드 작업을 찾을 수 없습니다.';
+    case 'DOWNLOAD_ACTION_UNAVAILABLE': return '현재 상태에서 해당 작업을 할 수 없습니다.';
     case 'DOWNLOAD_FORMAT_UNSUPPORTED': return '저장할 수 있는 영상 포맷을 찾지 못했습니다.';
     case 'CONTAINER_INCOMPATIBLE': return '선택한 파일 형식에 영상과 음성을 담을 수 없습니다. 설정의 파일 형식을 확인하세요.';
     case 'FFMPEG_MISSING': return '실행 파일 옆 tools 폴더에 ffmpeg.exe를 넣고 다시 시도하세요.';

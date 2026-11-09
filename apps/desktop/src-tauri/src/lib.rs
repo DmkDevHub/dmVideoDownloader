@@ -62,6 +62,7 @@ pub fn run() {
                     .map_err(browser::registration_error)
             });
             app.manage(bridge);
+            app.manage(std::sync::Arc::new(download::queue::Queue::default()));
 
             #[cfg(feature = "smoke-test")]
             {
@@ -89,7 +90,9 @@ pub fn run() {
             analysis::tool_diagnostics,
             analysis::analyze_url,
             analysis::analyze_candidate,
-            download::download_video,
+            download::queue::download_video,
+            download::queue::download_jobs,
+            download::queue::download_action,
             browser::browser_runtime,
             browser::browser_begin_test,
             browser::browser_connection_status,
@@ -126,9 +129,28 @@ pub fn run() {
     ]);
 
     builder
-        .run(tauri::generate_context!())
-        .expect("desktop runtime failed");
+        .build(tauri::generate_context!())
+        .expect("desktop runtime failed")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                let queue = Arc::clone(app.state::<Arc<download::queue::Queue>>().inner());
+                let (running, first) = queue.shutdown();
+                if running {
+                    api.prevent_exit();
+                    if first {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            while queue.busy() {
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+                            app.exit(code.unwrap_or(0));
+                        });
+                    }
+                }
+            }
+        });
 }
+use std::sync::Arc;
 use tauri::Manager;
 
 #[tauri::command]

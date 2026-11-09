@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, nextTick } from 'vue';
 import { ref } from 'vue';
-import { Channel, invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
 import { connectionLabel, registrationLabel, type BrowserRuntime, type ConnectionStatus } from './browserConnection';
 import { analysisError, analysisSource, resolution, trackLabel, type AnalysisReport } from './analysis';
-import { downloadError, progressLabel, type DownloadRequest, type DownloadProgress, type SavedVideo } from './download';
+import { downloadError, downloadPhase, progressLabel, type DownloadAction, type DownloadJob, type DownloadRequest } from './download';
 
 const address = ref('');
 const analysis = ref<AnalysisReport>();
@@ -14,23 +14,35 @@ const analysisBusy = ref(false);
 const analysisMessage = ref('');
 const analyzingCandidate = ref<string>();
 const downloadSource = ref<DownloadRequest>();
-const downloading = ref(false);
-const downloadTitle = ref('');
-const downloadProgress = ref<DownloadProgress>();
-const savedVideo = ref<SavedVideo>();
+const submittingDownload = ref(false);
+const jobs = ref<DownloadJob[]>([]);
 const downloadMessage = ref('');
+let jobsRequest = 0;
+async function refreshDownloads() {
+  const request = ++jobsRequest;
+  try {
+    const items = await invoke<DownloadJob[]>('download_jobs');
+    if (request === jobsRequest) jobs.value = items;
+  } catch { /* Keep the last known job state on a transient IPC failure. */ }
+}
 async function startDownload() {
   const request = downloadSource.value;
-  if (!request || !analysis.value || downloading.value) return;
-  downloadTitle.value = analysis.value.title;
-  downloading.value = true;
-  downloadProgress.value = undefined;
-  savedVideo.value = undefined;
+  if (!request || !analysis.value || submittingDownload.value) return;
+  submittingDownload.value = true;
   downloadMessage.value = '';
-  const updates = new Channel<DownloadProgress>(value => { downloadProgress.value = value; });
-  try { savedVideo.value = await invoke<SavedVideo>('download_video', { request, updates }); }
+  try {
+    const id = await invoke<number>('download_video', { request });
+    await refreshDownloads();
+    return id;
+  }
   catch (error) { downloadMessage.value = downloadError(error); }
-  finally { downloading.value = false; }
+  finally { submittingDownload.value = false; }
+}
+async function changeDownload(id: number, action: DownloadAction) {
+  downloadMessage.value = '';
+  try { await invoke('download_action', { id, action }); }
+  catch (error) { downloadMessage.value = downloadError(error); }
+  await refreshDownloads();
 }
 async function runAnalysis(command: 'analyze_url' | 'analyze_candidate', args: Record<string, string>) {
   if (analysisBusy.value) return;
@@ -218,7 +230,8 @@ onMounted(async () => {
       if (snapshot.notice) editor.value?.open();
       void refreshCandidates();
       void refreshConnection();
-      candidateTimer = setInterval(() => { void refreshCandidates(); void refreshConnection(); }, 750);
+      void refreshDownloads();
+      candidateTimer = setInterval(() => { void refreshCandidates(); void refreshConnection(); void refreshDownloads(); }, 500);
     }
   } catch (error) {
     startupError.value = settingsError(error);
@@ -256,7 +269,7 @@ onMounted(async () => {
       <h2>{{ analysis.title }}</h2>
       <p class="hint" role="status">{{ analysisSource[analysis.source] }}에서 포맷 {{ analysis.formats.length }}개를 확인했습니다.</p>
       <p v-if="analysis.excludedProtected" class="hint">보호 가능성이 있는 포맷 {{ analysis.excludedProtected }}개를 제외했습니다.</p>
-      <button type="button" :disabled="downloading || !snapshotState?.canSave" @click="startDownload">다운로드</button>
+      <button type="button" :disabled="submittingDownload || !snapshotState?.canSave" @click="startDownload">다운로드</button>
       <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>해상도</th><th>트랙</th><th>영상 코덱</th><th>음성 코덱</th></tr></thead><tbody>
         <tr v-for="format in analysis.formats" :key="format.id">
           <td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ resolution(format) }}</td><td>{{ trackLabel[format.tracks] }}</td>
@@ -268,13 +281,19 @@ onMounted(async () => {
     <section class="panel" aria-labelledby="jobs-heading">
       <h2 id="jobs-heading">다운로드</h2>
       <div class="table-scroll"><table><thead><tr><th>제목</th><th>화질</th><th>진행률 / 속도</th><th>상태</th><th>작업</th></tr></thead><tbody>
-        <tr v-if="downloadTitle" data-download-row>
-          <td>{{ downloadTitle }}</td><td>{{ savedVideo?.height ? savedVideo.height + 'p' : '미확인' }}</td>
-          <td>{{ savedVideo ? '100%' : progressLabel(downloadProgress) }}</td>
-          <td role="status">{{ downloading ? (downloadProgress?.merging ? '파일 처리 중' : downloadProgress ? '다운로드 중' : '영상 확인 중') : savedVideo ? '완료' : '실패' }}</td>
-          <td>{{ savedVideo?.filename ?? '—' }}</td>
+        <tr v-for="job in jobs" :key="job.id" data-download-row>
+          <td>{{ job.title }}</td><td>{{ job.height ? job.height + 'p' : '미확인' }}</td>
+          <td>{{ job.phase === 'completed' ? '100%' : progressLabel(job.progress) }}</td>
+          <td>{{ downloadPhase[job.phase] }}<span v-if="job.error" class="error"> · {{ downloadError(job.error) }}</span></td>
+          <td>
+            <span v-if="job.filename">{{ job.filename }}</span>
+            <button v-if="['queued', 'analyzing', 'downloading', 'retrying'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'pause')">일시정지</button>
+            <button v-if="job.phase === 'paused'" type="button" @click="changeDownload(job.id, 'resume')">처음부터 재개</button>
+            <button v-if="['queued', 'analyzing', 'downloading', 'merging', 'retrying', 'pausing', 'paused'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'cancel')">취소</button>
+            <button v-if="job.canRetry" type="button" @click="changeDownload(job.id, 'retry')">다시 시도</button>
+          </td>
         </tr>
-        <tr v-else><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr>
+        <tr v-if="!jobs.length"><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr>
       </tbody></table></div>
       <p v-if="downloadMessage" role="alert" class="error">{{ downloadMessage }}</p>
     </section>
