@@ -1,7 +1,11 @@
 export interface Format {
   id: string;
   container: string | null;
+  width: number | null;
   height: number | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  tracks: 'audioVideo' | 'videoOnly' | 'audioOnly' | 'unknown';
 }
 export interface AnalysisReport {
   title: string;
@@ -9,6 +13,12 @@ export interface AnalysisReport {
   source: 'direct' | 'page' | 'media';
 }
 export const analysisSource = { direct: '입력한 주소', page: '후보의 페이지 주소', media: '감지한 미디어 주소' };
+export const trackLabel = { audioVideo: '영상·음성', videoOnly: '영상 전용', audioOnly: '음성 전용', unknown: '구성 미확인' };
+export function resolution(format: Format) {
+  if (format.height && format.width) return `${format.width} × ${format.height}`;
+  if (format.height) return `${format.height}p`;
+  return '미확인';
+}
 export function analysisError(error: unknown): string {
   switch (error) {
     case 'URL_NOT_ALLOWED': return '인증 정보가 없는 공개 HTTP 또는 HTTPS 주소를 입력하세요. 내부 주소로 향하는 요청은 차단됩니다.';

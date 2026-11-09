@@ -5,6 +5,7 @@ use super::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
@@ -20,7 +21,10 @@ struct RawReport {
 struct RawFormat {
     format_id: Option<String>,
     ext: Option<String>,
-    height: Option<u32>,
+    width: Option<i64>,
+    height: Option<i64>,
+    vcodec: Option<String>,
+    acodec: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -28,7 +32,79 @@ struct RawFormat {
 pub struct Format {
     pub id: String,
     pub container: Option<String>,
+    pub width: Option<u32>,
     pub height: Option<u32>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub tracks: Tracks,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Tracks {
+    AudioVideo,
+    VideoOnly,
+    AudioOnly,
+    Unknown,
+}
+
+enum Codec {
+    Named(String),
+    Absent,
+    Unknown,
+}
+impl Codec {
+    fn parse(value: Option<String>) -> Self {
+        match format_tag(value, 64)
+            .map(|value| value.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("none") => Self::Absent,
+            Some("unknown") | None => Self::Unknown,
+            Some(name) => Self::Named(name.to_owned()),
+        }
+    }
+    fn name(self) -> Option<String> {
+        if let Self::Named(name) = self {
+            Some(name)
+        } else {
+            None
+        }
+    }
+}
+fn dimension(value: Option<i64>) -> Option<u32> {
+    value
+        .filter(|value| (1..=32_768).contains(value))
+        .map(|value| value as u32)
+}
+fn normalize(raw: RawFormat) -> Option<Format> {
+    let video = Codec::parse(raw.vcodec);
+    let audio = Codec::parse(raw.acodec);
+    let container = format_tag(raw.ext, 16).map(|value| value.to_ascii_lowercase());
+    let tracks = match (&video, &audio) {
+        (Codec::Named(_), Codec::Named(_)) => Tracks::AudioVideo,
+        (Codec::Named(_), Codec::Absent) => Tracks::VideoOnly,
+        (Codec::Absent, Codec::Named(_)) => Tracks::AudioOnly,
+        (Codec::Absent, Codec::Absent) => return None,
+        (Codec::Absent | Codec::Unknown, _)
+            if matches!(
+                container.as_deref(),
+                Some("mp3" | "m4a" | "aac" | "opus" | "wav" | "flac" | "oga" | "wma" | "mka")
+            ) =>
+        {
+            Tracks::AudioOnly
+        }
+        _ => Tracks::Unknown,
+    };
+    Some(Format {
+        id: format_tag(raw.format_id, 96)?,
+        container,
+        width: dimension(raw.width),
+        height: dimension(raw.height),
+        video_codec: video.name(),
+        audio_codec: audio.name(),
+        tracks,
+    })
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,21 +146,21 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
         })
         .filter(|title| !title.trim().is_empty())
         .unwrap_or_else(|| "공개 영상".into());
-    let formats: Vec<_> = raw
+    let mut ids = HashSet::new();
+    let mut formats: Vec<_> = raw
         .formats
         .into_iter()
-        .filter_map(|raw| {
-            Some(Format {
-                id: format_tag(raw.format_id, 96)?,
-                container: format_tag(raw.ext, 16),
-                height: raw.height.filter(|height| (1..=32_768).contains(height)),
-            })
-        })
+        .filter_map(normalize)
+        .filter(|format| ids.insert(format.id.clone()))
         .take(256)
         .collect();
-    if formats.is_empty() {
+    if formats
+        .iter()
+        .all(|format| format.tracks == Tracks::AudioOnly)
+    {
         return Err("NO_FORMATS");
     }
+    formats.sort_by_key(|format| std::cmp::Reverse(format.height.unwrap_or(0)));
     Ok(Report {
         title,
         formats,
@@ -209,6 +285,64 @@ mod tests {
         assert_eq!(json["formats"][0]["height"], 720);
         assert!(!json.to_string().contains("secret"));
         assert!(matches!(report(br#"{"formats":[]}"#), Err("NO_FORMATS")));
+    }
+
+    #[test]
+    fn normalizes_split_muxed_and_unknown_tracks_without_inventing_dimensions() {
+        let formats = report(br#"{"formats":[
+            {"format_id":"audio","ext":"M4A","vcodec":"none","acodec":"mp4a.40.2"},
+            {"format_id":"video","ext":"MP4","width":1920,"height":1080,"vcodec":"AVC1.640028","acodec":"none"},
+            {"format_id":"both","height":720,"vcodec":"vp9","acodec":"opus"},
+            {"format_id":"unknown","width":-1,"height":999999,"vcodec":"https://example.org/?token=secret"},
+            {"format_id":"both","height":2160},
+            {"format_id":"discard","vcodec":"none","acodec":"none"}
+        ]}"#).unwrap().formats;
+        assert_eq!(
+            formats
+                .iter()
+                .map(|format| format.tracks)
+                .collect::<Vec<_>>(),
+            [
+                Tracks::VideoOnly,
+                Tracks::AudioVideo,
+                Tracks::AudioOnly,
+                Tracks::Unknown
+            ]
+        );
+        assert_eq!(
+            (formats[0].width, formats[0].height),
+            (Some(1920), Some(1080))
+        );
+        assert_eq!(formats[0].video_codec.as_deref(), Some("avc1.640028"));
+        assert_eq!(formats[2].container.as_deref(), Some("m4a"));
+        assert!(
+            formats[3].width.is_none()
+                && formats[3].height.is_none()
+                && formats[3].video_codec.is_none()
+        );
+        assert!(matches!(
+            report(br#"{"formats":[{"format_id":"audio","ext":"mp3"}]}"#),
+            Err("NO_FORMATS")
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_split_stream_formats() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let report = Analyzer::open(&root)
+            .unwrap()
+            .analyze("https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd")
+            .unwrap();
+        assert!(report
+            .formats
+            .iter()
+            .any(|format| format.tracks == Tracks::VideoOnly && format.height.is_some()));
+        assert!(report
+            .formats
+            .iter()
+            .any(|format| format.tracks == Tracks::AudioOnly && format.audio_codec.is_some()));
+        println!("SPLIT_FORMATS_PASS: {} format(s)", report.formats.len());
     }
 
     #[test]

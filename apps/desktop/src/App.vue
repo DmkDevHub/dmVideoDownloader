@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import SettingsDialog from './SettingsDialog.vue';
 import { createSettingsEditor, settingsError, type Settings, type SettingsSnapshot } from './settings';
 import { connectionLabel, registrationLabel, type BrowserRuntime, type ConnectionStatus } from './browserConnection';
-import { analysisError, analysisSource, type AnalysisReport } from './analysis';
+import { analysisError, analysisSource, resolution, trackLabel, type AnalysisReport } from './analysis';
 
 const address = ref('');
 const analysis = ref<AnalysisReport>();
@@ -215,8 +215,12 @@ onMounted(async () => {
     <section v-if="analysis" class="panel" aria-label="포맷 분석 결과" data-analysis-result>
       <h2>{{ analysis.title }}</h2>
       <p class="hint" role="status">{{ analysisSource[analysis.source] }}에서 포맷 {{ analysis.formats.length }}개를 확인했습니다.</p>
-      <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>화질</th></tr></thead><tbody>
-        <tr v-for="(format, index) in analysis.formats" :key="`${format.id}-${index}`"><td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ format.height ? `${format.height}p` : '미확인' }}</td></tr>
+      <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>해상도</th><th>트랙</th><th>영상 코덱</th><th>음성 코덱</th></tr></thead><tbody>
+        <tr v-for="format in analysis.formats" :key="format.id">
+          <td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ resolution(format) }}</td><td>{{ trackLabel[format.tracks] }}</td>
+          <td>{{ format.tracks === 'audioOnly' ? '없음' : (format.videoCodec ?? '미확인') }}</td>
+          <td>{{ format.tracks === 'videoOnly' ? '없음' : (format.audioCodec ?? '미확인') }}</td>
+        </tr>
       </tbody></table></div>
     </section>
     <section class="panel" aria-labelledby="jobs-heading">
