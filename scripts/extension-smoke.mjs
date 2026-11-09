@@ -21,7 +21,7 @@ async function until(fn, label) {
 }
 const playableMp4 = process.env.DM_MEDIA_FIXTURE ? readFileSync(process.env.DM_MEDIA_FIXTURE) : undefined;
 const server = createServer((req, res) => {
-  if (req.url === '/master.m3u8') {
+  if (/\/(?:master|variant-\d+)\.m3u8(?:\?|$)/u.test(req.url ?? '')) {
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.end('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nvariant.m3u8\n'); return;
   }
@@ -29,8 +29,8 @@ const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/dash+xml');
     res.end('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"/>'); return;
   }
-  if (/\.(?:mp4|webm)(?:\?|$)/u.test(req.url ?? '')) {
-    res.setHeader('Content-Type', req.url.includes('.mp4') ? 'video/mp4' : 'video/webm');
+  if (/\.(?:mp4|m4v|webm)(?:\?|$)/u.test(req.url ?? '')) {
+    res.setHeader('Content-Type', req.url.includes('.webm') ? 'video/webm' : 'video/mp4');
     if (req.url.startsWith('/sample.mp4') && playableMp4) {
       res.setHeader('Content-Length', playableMp4.length); res.end(playableMp4); return;
     }
@@ -136,8 +136,16 @@ try {
     return state.candidates?.some(r => r.mediaUrl.endsWith('/changed.mp4'));
   }, 'HTML5 source attribute change');
   const stateForTab = () => evaluate(popupSession, `chrome.runtime.sendMessage({type:'POPUP_STATE',tabId:${tabId}})`);
+  await evaluate(pageSession, 'fetch("/show/variant-720.m3u8?v=1").then(() => true)');
+  const variantId = await until(async () => (await stateForTab()).candidates.find(row => row.mediaUrl.includes('/show/variant-720'))?.candidateId,
+    'HLS variant before master');
+  await evaluate(pageSession, 'Promise.all([fetch("/show/master.m3u8?v=1"), fetch("/show/variant-480.m3u8?v=1"), fetch("/show/master.m3u8?v=2")]).then(() => true)');
+  await until(async () => {
+    const rows = (await stateForTab()).candidates.filter(row => row.mediaUrl.includes('/show/'));
+    return rows.length === 2 && rows.some(row => row.candidateId === variantId && row.mediaUrl.endsWith('/show/master.m3u8?v=1'));
+  }, 'master promotion and independent asset identity');
   const beforeRepeat = await stateForTab();
-  await evaluate(pageSession, 'Promise.all([fetch("/sample.mp4?utm_source=repeat"), fetch("/chunk-1.mp4"), fetch("/segment2.mp4"), fetch("/sample.mp4?range=0-99")]).then(() => true)');
+  await evaluate(pageSession, 'Promise.all([fetch("/sample.mp4?utm_source=repeat"), fetch("/chunk-1.mp4"), fetch("/segment2.mp4"), fetch("/sample.mp4?range=0-99"), fetch("/show/v-0576p-libx264-s1.mp4"), fetch("/show/track_720/track_720_1.m4v"), fetch("/show/variant-1080.m3u8?v=1")]).then(() => true)');
   await pause(300);
   assert.equal((await stateForTab()).candidates.length, beforeRepeat.candidates.length);
   const otherUrl = pageUrl.replace('/watch', '/other');

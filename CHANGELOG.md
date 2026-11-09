@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R6-03] group adaptive variants without losing candidate identity
+
+- TC-06 PASS. 동일 탭의 명확한 HLS/DASH 변형을 묶고 마스터 발견 시 대표 주소만 교체한다. 식별 쿼리·경로가 다른 영상은 분리하고 CMAF·알려진 조각·별도 음성 URL을 제외한다. Chrome for Testing에서 반복 요청, 후보 ID 유지, 탭 분리와 워커 복원 확인. 확장 테스트 29개 및 실제 공개 MP4 재생 PASS.
+
 ## 2026-11-09 — [R6-02] transfer validated segmented DASH video and audio
 
 - TC-05 전송 검증 PASS. 공개 Big Buck Bunny 정적 DASH에서 720p 영상과 분리 음성의 초기화/미디어 조각을 각각 160개 전송해 MP4로 병합했다. 출력 영상·음성의 처음 5초를 FFmpeg로 디코딩했다. Rust 33개 PASS. 보호·동적/다중 기간·외부 링크·범위 조각 거부와 주소 검증을 포함한다.

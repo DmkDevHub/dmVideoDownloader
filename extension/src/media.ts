@@ -33,7 +33,13 @@ export function classifyMedia(url: string, mime = ''): SourceType | null {
 export interface Observation { tabId: number; mediaUrl: string; sourceType: SourceType }
 export function isSegment(url: string, mime = ''): boolean {
   const parsed = new URL(url);
-  if (/\.(?:ts|m4s|m4a|aac|mp3|vtt|key)$/iu.test(parsed.pathname) || mime.split(';')[0].trim().toLowerCase() === 'video/mp2t') return true;
+  if (/\.(?:ts|m4s|cmfv|cmfa|m4a|aac|mp3|vtt|key)$/iu.test(parsed.pathname) || mime.split(';')[0].trim().toLowerCase() === 'video/mp2t') return true;
+  const parts = parsed.pathname.split('/');
+  const file = parts[parts.length - 1];
+  const parent = parts[parts.length - 2];
+  if (file && (/^(?:v-\d{3,4}p-|a-[a-z]{2,3}-\d+k-).+-s\d+\.mp4$/iu.test(file)
+    || /^playlist_a-[a-z]{2,3}-\d+k-.+\.m3u8$/iu.test(file)
+    || (parent && file.match(/^(.+)_\d+\.(?:m4v|m4a|mp4)$/iu)?.[1] === parent))) return true;
   if (/(?:^|[\/_.-])(?:seg(?:ment)?s?|chunks?|frag(?:ment)?s?|init)(?:[\/_.-]?\d|[\/_.-]|$)/iu.test(parsed.pathname)) return true;
   return Array.from(parsed.searchParams.keys()).some(key => /^(?:range|bytestart|byteend|sq|seg(?:ment)?|fragment|chunk)$/iu.test(key));
 }
@@ -43,6 +49,30 @@ function mediaIdentity(value: string): string {
     if (/^(?:utm_.+|fbclid|gclid)$/iu.test(key)) url.searchParams.delete(key);
   }
   url.searchParams.sort(); return url.href;
+}
+function streamGroup(value: string, type: SourceType): { key: string; rank: number } | null {
+  if (type !== 'hls' && type !== 'dash') return null;
+  const url = new URL(mediaIdentity(value));
+  let queryVariant = false;
+  for (const key of Array.from(url.searchParams.keys())) {
+    const selections = url.searchParams.getAll(key);
+    if (/^(?:quality|height|resolution|bitrate)$/iu.test(key) && selections.length
+      && selections.every(selection => /^(?:\d{2,7}p?|auto)$/iu.test(selection))) {
+      url.searchParams.delete(key);
+      queryVariant = true;
+    }
+  }
+  const split = url.pathname.match(/^(.*\/)([^/]+)\.(?:m3u8|mpd)$/iu);
+  if (!split) return { key: JSON.stringify([type, url.origin, url.pathname, url.search]), rank: queryVariant ? 1 : 2 };
+  const [, directory, name] = split;
+  const root = /^(?:master|manifest|index|hls|dash|playlist)$/iu.test(name);
+  const child = /^(?:\d{3,4}p|(?:variant|rendition|stream|chunklist)[_-]\d[\w-]*|playlist_v-\d{3,4}p-.+)$/iu.test(name);
+  const asset = name.replace(/[-_.]\d{3,4}p$/iu, '');
+  const stem = root || child ? null : asset;
+  return {
+    key: JSON.stringify([type, url.origin, directory, stem, url.search]),
+    rank: queryVariant || child || asset !== name ? 1 : root ? 3 : 2,
+  };
 }
 export function domObservation(tabId: number, message: unknown): Observation | null {
   if (!Number.isSafeInteger(tabId) || tabId < 0 || !message || typeof message !== 'object') return null;
@@ -106,9 +136,17 @@ export class CandidateStore {
     if (!tab || !mediaUrl || isSegment(mediaUrl)) return null;
     const rows = tab.rows;
     const identity = mediaIdentity(mediaUrl);
-    const existing = rows.find(row => mediaIdentity(row.mediaUrl) === identity);
+    const group = streamGroup(mediaUrl, observation.sourceType);
+    const exact = rows.find(row => mediaIdentity(row.mediaUrl) === identity);
+    const related = exact || !group ? [] : rows.filter(row => {
+      const previous = streamGroup(row.mediaUrl, row.sourceType);
+      return previous?.key === group.key && (previous.rank === 1 || group.rank === 1);
+    });
+    const existing = exact ?? (related.length === 1 ? related[0] : undefined);
     if (existing) {
       if (existing.sourceType === 'unknown') existing.sourceType = observation.sourceType;
+      const previous = streamGroup(existing.mediaUrl, existing.sourceType);
+      if (!exact && group && previous && group.rank > previous.rank) existing.mediaUrl = mediaUrl;
       return existing;
     }
     if (rows.length >= CandidateStore.perTabLimit || Array.from(this.tabs.values()).reduce((n, entry) => n + entry.rows.length, 0) >= CandidateStore.totalLimit) return null;
@@ -144,8 +182,10 @@ export class CandidateStore {
           !['mp4', 'webm', 'hls', 'dash', 'unknown'].includes(item.sourceType) ||
           typeof item.detectedAt !== 'string' || !Number.isFinite(Date.parse(item.detectedAt)) ||
           item.status !== 'detected' || item.tabId !== tabId || item.pageUrl !== state.pageUrl) continue;
+        const rows = this.tabs.get(tabId)?.rows;
+        const before = rows?.length;
         const candidate = this.add({ tabId, mediaUrl: item.mediaUrl, sourceType: item.sourceType as SourceType });
-        if (candidate) { candidate.candidateId = item.candidateId; candidate.detectedAt = item.detectedAt; }
+        if (candidate && rows?.length !== before) { candidate.candidateId = item.candidateId; candidate.detectedAt = item.detectedAt; }
       }
     }
   }
