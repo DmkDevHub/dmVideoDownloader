@@ -99,9 +99,17 @@ try {
     console.log('ANALYSIS_SMOKE_PASS: public page, candidate media fallback, private URL rejected in the hidden WebView');
     const downloads = join(root, 'Downloads');
     const files = readdirSync(downloads);
-    assert.deepEqual(new Set(files), new Set(['flower.mp4', 'flower (1).mp4']));
+    assert.equal(files.length, 3);
+    assert.ok(files.includes('flower.mp4') && files.includes('flower (1).mp4'));
+    const hls = files.find(file => !file.startsWith('flower'));
+    assert.ok(hls?.endsWith('.mp4'));
     assert.ok(files.every(file => statSync(join(downloads, file)).size > 0));
-    console.log('DOWNLOAD_SMOKE_PASS: two requested downloads, unique output files, opt-in notification dispatch');
+    const decoded = spawnSync(join(root, 'tools/ffmpeg.exe'),
+      ['-nostdin', '-v', 'error', '-xerror', '-i', join(downloads, hls), '-map', '0:V:0', '-map', '0:a:0', '-f', 'null', '-'],
+      { windowsHide: true, timeout: 30_000 });
+    assert.equal(decoded.status, 0, 'HLS file must decode with both video and audio');
+    console.log('DOWNLOAD_SMOKE_PASS: two MP4 requests, one HLS request, unique output files, opt-in notification dispatch');
+    console.log('HLS_WEBVIEW_PASS: public HLS saved from the normal app command and decoded both tracks');
     if (process.env.DM_R5_TEST_WINDOWS_NOTIFICATION === '1') {
       console.log('WINDOWS_NOTIFICATION_ACCEPTED: Windows Shell accepted one enabled completion notification');
     }

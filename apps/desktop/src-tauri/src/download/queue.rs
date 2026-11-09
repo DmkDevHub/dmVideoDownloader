@@ -417,7 +417,7 @@ impl Queue {
 fn retryable(code: &str) -> bool {
     matches!(
         code,
-        "NETWORK_ERROR" | "ANALYSIS_TIMEOUT" | "DOWNLOAD_TIMEOUT"
+        "NETWORK_ERROR" | "ANALYSIS_TIMEOUT" | "DOWNLOAD_TIMEOUT" | "STREAM_BODY_INCOMPLETE"
     )
 }
 

@@ -34,6 +34,7 @@ export function analysisError(error: unknown): string {
     case 'EXPIRED_OR_GONE': return '주소가 만료됐거나 더 이상 제공되지 않습니다. 원래 페이지에서 새 주소를 확인하세요.';
     case 'ACCESS_DENIED': return '서버가 접근을 거부했습니다. 이 응답만으로 원인을 확인할 수 없습니다.';
     case 'NOT_FOUND': return '서버에서 영상 주소를 찾지 못했습니다.';
+    case 'RATE_LIMITED': return '영상 서버의 요청 한도에 도달했습니다. 잠시 후 다시 시도하세요.';
     case 'NETWORK_ERROR': return '영상 서버에 연결하지 못했습니다. 네트워크 상태를 확인하세요.';
     case 'INVALID_METADATA': return '영상 서버에서 받은 포맷 정보를 해석하지 못했습니다.';
     case 'NO_FORMATS': return '확인할 수 있는 영상 포맷이 없습니다.';

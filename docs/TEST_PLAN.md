@@ -193,3 +193,16 @@ R2 완료는 확장 측 기능과 위 내부·실제 headless 프로세스 검�
 `DM_R4_TOOL_ROOT`에 검증된 도구의 포터블 루트를 지정한다. `npm run verify`는 숨김 WebView에서 실제 다운로드를 검사하고, `DM_R5_TEST_WINDOWS_NOTIFICATION=1`을 추가하면 Windows Shell 호출의 반환값을 확인한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- --ignored --nocapture --test-threads=1`은 공개 미디어 전송·병합·재시도와 R4 실제 도구 회귀를 실행한다.
 
 Windows 알림의 시각 표시, 사용자 클릭·키보드 인수, Chrome 감지부터 전체 다운로드·재생까지의 릴리스 인수는 별도 검증 범위이다. 세그먼트 기반 HLS/DASH 다운로드는 R6에서 다룬다.
+
+## 13. R6 HLS·DASH 및 후보 그룹화 검증 (2026-11-09)
+
+| 검증 범위 | 실행 결과 |
+|---|---|
+| TC-04 공개 HLS | Shaka 공개 마스터에서 720p 상한 이하 576p 변형과 기본 음성을 선택해 MP4로 병합하고 두 트랙 디코딩 PASS. HLS 키 선언, 라이브, 위험 주소 거부와 초기화·바이트 범위 처리 테스트 PASS |
+| TC-05 공개 조각형 DASH | 공개 Big Buck Bunny MPD의 720p 영상과 별도 음성을 각각 160개 조각 전송해 병합. 출력 양쪽 트랙의 처음 5초 디코딩 PASS. 보호·라이브·다중 기간·외부 링크 및 위험 조각 주소 거부 테스트 PASS |
+| TC-06 대표 후보 | Chrome for Testing에서 변형을 먼저 보고 뒤늦게 받은 마스터로 대표 주소 교체, ID 유지, 별도 콘텐츠·탭 보존, 반복 요청 및 조각 제외, 워커 재시작 후 복원 PASS |
+| 실패 회귀 | 기존 공개 HTTP 401/403/410/503과 보호 응답을 기준으로 진단을 유지했다. 로컬 HTTP 응답으로 누락·빈 조각, 전송 중 끊김, 잘못된 범위, 429, 인증성 쿼리·내부 주소 리디렉션을 재현하고 고정 오류 및 정상 206 응답 처리 PASS |
+
+`DM_R4_TOOL_ROOT`를 설정한 `npm run verify`는 숨김 WebView의 HLS 작업 요청, Windows 저장 및 FFmpeg 양쪽 트랙 디코딩을 추가 검증한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib real_segmented_dash -- --ignored --nocapture`는 공개 DASH 조각 전송을 재현한다. `DM_MEDIA_FIXTURE`에 기존 공개 MP4를 지정한 `npm run test:extension:chrome`은 실제 브라우저 감지·그룹화와 MP4 재생을 검사한다.
+
+실제 Chrome에서 사용자가 HLS/DASH를 재생하고 팝업을 클릭하는 전체 릴리스 인수와 화면 시각 확인은 미검증이다. 일반적인 MPEG-TS/AAC 재생목록 및 실제 CDN의 바이트 범위 HLS는 위 공개 fMP4 샘플과 별도 조합이다.

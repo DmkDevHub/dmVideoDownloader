@@ -412,10 +412,23 @@ fn remux(
         process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
         _ => "FFMPEG_FAILED",
     })?;
-    if !result.success
-        || !fs::metadata(output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
-    {
+    if !result.success {
+        let stderr = String::from_utf8_lossy(&result.stderr).to_ascii_lowercase();
+        if [
+            "invalid data found when processing input",
+            "could not find codec parameters",
+            "matches no streams",
+            "moov atom not found",
+        ]
+        .iter()
+        .any(|marker| stderr.contains(marker))
+        {
+            return Err("MEDIA_INVALID");
+        }
         return Err("CONTAINER_INCOMPATIBLE");
+    }
+    if !fs::metadata(output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0) {
+        return Err("DOWNLOAD_SAVE_FAILED");
     }
     Ok(())
 }
@@ -528,10 +541,10 @@ fn transfer(
     })?;
     if !output.success {
         let reason = failure::classify(&output.stderr);
-        return Err(if reason == "ANALYSIS_FAILED" {
-            "DOWNLOAD_FAILED"
-        } else {
-            reason
+        return Err(match reason {
+            "ANALYSIS_FAILED" => "DOWNLOAD_FAILED",
+            "ANALYSIS_TIMEOUT" => "DOWNLOAD_TIMEOUT",
+            reason => reason,
         });
     }
     folders::check_path(path)?;

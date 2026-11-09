@@ -134,3 +134,9 @@
 
 - 같은 Windows x64 개발 환경 A와 기존 검증 도구를 사용했다. `DM_R4_TOOL_ROOT`와 `DM_R5_TEST_WINDOWS_NOTIFICATION=1`을 설정한 `npm run verify`에서 JS/Rust 단위 테스트 72개, 숨김 WebView·Native Host 통합, 앱·확장 빌드 PASS. 별도 창 조작 없이 Windows Shell이 완료 알림 한 건을 수락한 반환값을 확인했다.
 - TEST_PLAN 12절의 별도 실도구 회귀 12개 PASS. 공개 MP4, Sintel DASH 분리 트랙, HTTP 503/401 응답과 일시정지 파일 정리를 검증했다. 숨김 WebView 통합에서 저장한 MP4 2개도 FFmpeg로 별도 디코딩했다. [공개 Sintel 샘플 출처](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist)
+
+### R6 HLS·DASH 다운로드 검증 (2026-11-09)
+
+- 같은 Windows x64 개발 환경 A에서 기존 yt-dlp 2026.10.26, FFmpeg 9.0.2, Chrome for Testing 157.0.8103.38을 사용했다. Cargo 잠금 파일에 조각 전송용 reqwest 0.13.5의 Windows TLS 기능과 정적 MPD 검사용 quick-xml 0.42.0을 반영했다.
+- TEST_PLAN 13절의 공개 HLS·DASH 전송, FFmpeg 디코딩 및 Chrome 후보 그룹화·세션 복원 PASS. 공개 HLS는 Shaka Angel One, 공개 조각형 DASH는 DASH-IF Big Buck Bunny 테스트 자산을 사용했다. [Shaka 예제](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist) · [DASH-IF 테스트 자산](https://dashif.org/tools/testassets/)
+- `DM_R4_TOOL_ROOT`를 지정한 `npm run verify`에서 단위 테스트 80개, 숨김 앱·Native Host, 공개 HLS 저장과 양쪽 트랙 디코딩, 일반 앱·확장 빌드 PASS. 실제 공개 오류 응답 및 재시도 테스트 2개를 별도로 다시 실행했다.

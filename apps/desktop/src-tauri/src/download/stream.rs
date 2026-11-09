@@ -37,6 +37,10 @@ pub(super) struct StreamClient<'a> {
 impl<'a> StreamClient<'a> {
     pub fn new(control: &'a Control) -> Result<Self, &'static str> {
         let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
+        Self::with_proxy(control, proxy)
+    }
+
+    fn with_proxy(control: &'a Control, proxy: proxy::Proxy) -> Result<Self, &'static str> {
         let client = Client::builder()
             .redirect(Policy::none())
             .proxy(reqwest::Proxy::all(proxy.endpoint()).map_err(|_| "NETWORK_ERROR")?)
@@ -103,15 +107,17 @@ impl<'a> StreamClient<'a> {
                 206 if range.is_some_and(|range| valid_content_range(&response, range)) => {
                     return Ok(response)
                 }
+                200 | 206 | 416 if range.is_some() => return Err("STREAM_RANGE_INVALID"),
                 401 => return Err("AUTH_REQUIRED"),
                 403 => return Err("ACCESS_DENIED"),
                 404 => return Err("NOT_FOUND"),
                 410 => return Err("EXPIRED_OR_GONE"),
-                408 | 429 | 500..=599 => return Err("NETWORK_ERROR"),
+                429 => return Err("RATE_LIMITED"),
+                408 | 500..=599 => return Err("NETWORK_ERROR"),
                 _ => return Err("STREAM_RESPONSE_INVALID"),
             }
         }
-        Err("STREAM_RESPONSE_INVALID")
+        Err("STREAM_REDIRECT_LIMIT")
     }
 
     pub fn playlist(&self, url: &Url) -> Result<(Url, String), &'static str> {
@@ -158,7 +164,15 @@ impl<'a> StreamClient<'a> {
         let mut downloaded = 0u64;
         let mut buffer = [0; 64 * 1024];
         for (index, part) in parts.iter().enumerate() {
-            let mut response = self.get(part.url.clone(), part.range.as_ref())?;
+            let mut response =
+                self.get(part.url.clone(), part.range.as_ref())
+                    .map_err(|error| {
+                        if error == "NOT_FOUND" {
+                            "STREAM_SEGMENT_MISSING"
+                        } else {
+                            error
+                        }
+                    })?;
             let expected = part
                 .range
                 .as_ref()
@@ -167,7 +181,13 @@ impl<'a> StreamClient<'a> {
             let mut count = 0;
             loop {
                 self.check()?;
-                let read = response.read(&mut buffer).map_err(|_| "NETWORK_ERROR");
+                let read = response.read(&mut buffer).map_err(|_| {
+                    if expected.is_some_and(|expected| count < expected) {
+                        "STREAM_BODY_INCOMPLETE"
+                    } else {
+                        "NETWORK_ERROR"
+                    }
+                });
                 self.check()?;
                 let n = read?;
                 if n == 0 {
@@ -190,8 +210,11 @@ impl<'a> StreamClient<'a> {
                     last_update = Instant::now();
                 }
             }
-            if count == 0 || expected.is_some_and(|expected| count != expected) {
-                return Err("STREAM_RESPONSE_INVALID");
+            if expected.is_some_and(|expected| count != expected) {
+                return Err("STREAM_BODY_INCOMPLETE");
+            }
+            if count == 0 {
+                return Err("STREAM_SEGMENT_EMPTY");
             }
         }
         file.flush().map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
@@ -217,4 +240,109 @@ fn valid_content_range(response: &Response, range: &RangeInclusive<u64>) -> bool
     };
     actual == format!("{}-{}", range.start(), range.end())
         && (total == "*" || total.parse::<u64>().is_ok_and(|total| total > *range.end()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{BufRead, BufReader},
+        net::TcpListener,
+        thread,
+    };
+
+    fn fixture(
+        responses: Vec<&'static str>,
+        run: impl FnOnce(&StreamClient<'_>, Url),
+    ) -> Vec<String> {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy = proxy::Proxy::with_test_fixture(listener.local_addr().unwrap()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for response in responses {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut connection = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && Instant::now() < deadline =>
+                        {
+                            thread::sleep(Duration::from_millis(10))
+                        }
+                        Err(error) => panic!("fixture did not receive request: {error}"),
+                    }
+                };
+                connection
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = String::new();
+                let mut reader = BufReader::new(&mut connection);
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    request.push_str(&line);
+                }
+                connection.write_all(response.as_bytes()).unwrap();
+                requests.push(request.to_ascii_lowercase());
+            }
+            requests
+        });
+        let control = Control::default();
+        let client = StreamClient::with_proxy(&control, proxy).unwrap();
+        run(
+            &client,
+            Url::parse("http://fixture.example.org/asset").unwrap(),
+        );
+        server.join().unwrap()
+    }
+
+    #[test]
+    fn distinguishes_missing_empty_truncated_rate_limited_and_bad_range_responses() {
+        for (response, range, expected) in [
+            ("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", None, "STREAM_SEGMENT_MISSING"),
+            ("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", None, "STREAM_SEGMENT_EMPTY"),
+            ("HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nab", None, "STREAM_BODY_INCOMPLETE"),
+            ("HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", None, "RATE_LIMITED"),
+            ("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nab", Some(2..=3), "STREAM_RANGE_INVALID"),
+            ("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-1/4\r\nContent-Length: 2\r\nConnection: close\r\n\r\nab", Some(2..=3), "STREAM_RANGE_INVALID"),
+        ] {
+            fixture(vec![response], |client, url| {
+                let folder = tempfile::tempdir().unwrap();
+                let path = folder.path().join("part");
+                assert_eq!(client.transfer(&[Part { url, range }], &path, |_| {}), Err(expected));
+            });
+        }
+    }
+
+    #[test]
+    fn range_transfer_follows_only_validated_redirects_and_keeps_no_cookies() {
+        let requests = fixture(vec![
+            "HTTP/1.1 302 Found\r\nLocation: /media\r\nSet-Cookie: fixture=unused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 2-3/4\r\nContent-Length: 2\r\nConnection: close\r\n\r\ncd",
+        ], |client, url| {
+            let folder = tempfile::tempdir().unwrap();
+            let path = folder.path().join("part");
+            client.transfer(&[Part { url, range: Some(2..=3) }], &path, |_| {}).unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), b"cd");
+        });
+        assert!(requests[1].starts_with("get /media "));
+        assert!(requests
+            .iter()
+            .all(|request| request.contains("\r\nrange: bytes=2-3")
+                && !request.contains("\r\ncookie:")
+                && !request.contains("\r\nauthorization:")));
+        for location in [
+            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 302 Found\r\nLocation: /private?token=fixture\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        ] {
+            fixture(vec![location], |client, url| {
+                assert_eq!(client.playlist(&url).err(), Some("URL_NOT_ALLOWED"));
+            });
+        }
+    }
 }

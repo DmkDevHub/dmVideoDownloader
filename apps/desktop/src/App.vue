@@ -202,6 +202,11 @@ onMounted(async () => {
           await invoke('save_settings', { settings: { ...snapshot.settings, completionNotification: false } });
           const second = await startDownload();
           const secondError = downloadMessage.value;
+          address.value = 'https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8';
+          await analyzeAddress();
+          const streamAnalysisError = analysisMessage.value;
+          const hls = await startDownload();
+          const streamDownloadError = downloadMessage.value;
           address.value = 'https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/extra-video-features.html';
           await analyzeAddress();
           await nextTick();
@@ -211,18 +216,20 @@ onMounted(async () => {
           await analyzeAddress();
           await nextTick();
           let downloadsShown = false;
-          for (let attempt = 0; first && second && attempt < 240 && !downloadsShown; attempt++) {
+          for (let attempt = 0; first && second && hls && attempt < 240 && !downloadsShown; attempt++) {
             await refreshDownloads();
             await nextTick();
             const saved = jobs.value.filter(job => job.phase === 'completed');
             if (jobs.value.some(job => job.phase === 'failed')) break;
-            downloadsShown = first !== second && saved.length === 2 && saved.every(job => job.filename?.endsWith('.mp4')) &&
-              new Set(saved.map(job => job.filename)).size === 2 &&
-              document.querySelectorAll('[data-download-row]').length === 2 &&
+            downloadsShown = new Set([first, second, hls]).size === 3 && saved.length === 3 &&
+              saved.every(job => job.filename?.endsWith('.mp4')) && saved.some(job => job.id === hls && job.height === 576) &&
+              new Set(saved.map(job => job.filename)).size === 3 &&
+              document.querySelectorAll('[data-download-row]').length === 3 &&
               await invoke<number>('smoke_notification_count') === 1;
             if (!downloadsShown) await new Promise(resolve => setTimeout(resolve, 250));
           }
           smokeDetails = JSON.stringify({ candidateShown, directShown, first, second, firstError, secondError,
+            hls, streamAnalysisError, streamDownloadError,
             jobs: jobs.value.map(({ phase, error }) => ({ phase, error })),
             notifications: await invoke<number>('smoke_notification_count') });
           smokePassed = candidateShown && directShown && !analysis.value &&

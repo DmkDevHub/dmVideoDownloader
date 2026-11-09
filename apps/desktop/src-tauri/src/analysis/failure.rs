@@ -56,6 +56,9 @@ pub fn classify(stderr: &[u8]) -> &'static str {
     if has(&["http error 404", "404 client error"]) {
         return "NOT_FOUND";
     }
+    if has(&["http error 429", "429 client error"]) {
+        return "RATE_LIMITED";
+    }
     if has(&["timed out", "timeout error", "timeoutexception"]) {
         return "ANALYSIS_TIMEOUT";
     }
@@ -95,6 +98,7 @@ mod tests {
             ("ERROR: HTTP Error 410: Gone", "EXPIRED_OR_GONE"),
             ("ERROR: HTTP Error 403: Forbidden https://example.org/url%20has%20expired?token=fixture", "ACCESS_DENIED"),
             ("ERROR: HTTP Error 404: Not Found", "NOT_FOUND"),
+            ("ERROR: HTTP Error 429: Too Many Requests", "RATE_LIMITED"),
             ("ERROR: Unsupported URL: https://example.org/expired-signature", "UNSUPPORTED_URL"),
             ("ERROR: TransportError: connection reset", "NETWORK_ERROR"),
             ("ERROR: The read operation timed out", "ANALYSIS_TIMEOUT"),

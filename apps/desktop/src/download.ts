@@ -40,6 +40,12 @@ export function downloadError(error: unknown) {
     case 'DASH_MANIFEST_UNSUPPORTED': return '지원하지 않는 DASH 매니페스트 구성입니다.';
     case 'DASH_LIVE_UNSUPPORTED': return '라이브 DASH 영상은 저장할 수 없습니다.';
     case 'STREAM_RESPONSE_INVALID': return '영상 서버가 올바른 재생목록 또는 조각을 반환하지 않았습니다.';
+    case 'STREAM_SEGMENT_MISSING': return '영상 조각을 서버에서 찾을 수 없습니다. 원래 페이지에서 다시 분석하세요.';
+    case 'STREAM_SEGMENT_EMPTY': return '서버에서 빈 영상 조각을 반환했습니다.';
+    case 'STREAM_BODY_INCOMPLETE': return '영상 조각 전송이 끝나기 전에 연결이 끊겼습니다.';
+    case 'STREAM_RANGE_INVALID': return '영상 서버가 요청한 바이트 범위를 반환하지 않았습니다.';
+    case 'STREAM_REDIRECT_LIMIT': return '영상 서버의 주소 이동 횟수가 한도를 초과했습니다.';
+    case 'MEDIA_INVALID': return '받은 영상 또는 음성 파일을 읽을 수 없습니다.';
     case 'CONTAINER_INCOMPATIBLE': return '선택한 파일 형식에 영상과 음성을 담을 수 없습니다. 설정의 파일 형식을 확인하세요.';
     case 'FFMPEG_MISSING': return '실행 파일 옆 tools 폴더에 ffmpeg.exe를 넣고 다시 시도하세요.';
     case 'FFMPEG_UNSUPPORTED': return '지원되는 FFmpeg 버전으로 교체한 뒤 다시 시도하세요.';

@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R6-04] classify stream failures and verify HLS through the app
+
+- 누락·빈 조각, 잘못된 범위, 전송 중단, 요청 한도와 리디렉션을 고정 메시지로 분류했다. 정상 206, 잘못된 범위, 인증성 주소 차단과 실제 공개 HTTP/DRM 응답, 503 재시도 및 401 즉시 중단을 회귀 검증했다. npm run verify 단위 80개와 숨김 WebView에서 공개 HLS 저장 및 양쪽 트랙 디코딩 PASS. 화면 시각 인수는 미검증.
+
 ## 2026-11-09 — [R6-03] group adaptive variants without losing candidate identity
 
 - TC-06 PASS. 동일 탭의 명확한 HLS/DASH 변형을 묶고 마스터 발견 시 대표 주소만 교체한다. 식별 쿼리·경로가 다른 영상은 분리하고 CMAF·알려진 조각·별도 음성 URL을 제외한다. Chrome for Testing에서 반복 요청, 후보 ID 유지, 탭 분리와 워커 복원 확인. 확장 테스트 29개 및 실제 공개 MP4 재생 PASS.
