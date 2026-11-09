@@ -5,7 +5,7 @@ import BrowserConnection from './BrowserConnection.vue';
 import type { BrowserRuntime } from './browserConnection';
 
 defineProps<{ draft: Settings; busy: boolean; error: string; canSave?: boolean; canRecover?: boolean; notice?: string; savedId?: string; runtime?: BrowserRuntime }>();
-defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: []; registration: [action: 'register' | 'unregister'] }>();
+defineEmits<{ cancel: []; reset: []; save: []; browse: []; recover: []; registration: [action: 'register' | 'repair' | 'unregister'] }>();
 const dialog = ref<HTMLDialogElement>();
 onMounted(() => dialog.value?.showModal());
 </script>

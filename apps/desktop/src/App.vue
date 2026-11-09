@@ -13,14 +13,14 @@ const snapshotState = ref<SettingsSnapshot>();
 const runtime = ref<BrowserRuntime>();
 const actionMessage = ref('');
 
-async function browserRegistration(action: 'register' | 'unregister') {
+async function browserRegistration(action: 'register' | 'repair' | 'unregister') {
   const current = editor.value;
   if (!current || current.state.busy) return;
   current.state.busy = true;
   current.state.error = '';
   try {
-    await invoke(action === 'register' ? 'browser_register' : 'browser_unregister', { extensionId: current.state.draft.browserExtensionId });
-    actionMessage.value = action === 'register' ? '호스트를 등록했습니다. 연결 테스트가 필요합니다.' : '호스트 등록을 해제했습니다.';
+    await invoke(action === 'unregister' ? 'browser_unregister' : 'browser_register', { extensionId: current.state.draft.browserExtensionId, repair: action === 'repair' });
+    actionMessage.value = action === 'unregister' ? '호스트 등록을 해제했습니다.' : '호스트를 등록했습니다. 연결 테스트가 필요합니다.';
   } catch (error) { current.state.error = registrationLabel(error); }
   finally {
     try {

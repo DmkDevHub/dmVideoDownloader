@@ -7,6 +7,7 @@ export interface BrowserRuntime {
   registrationCode?: string;
   registeredPath?: string | null;
   configuredId?: string;
+  manifestPath?: string;
 }
 export interface ConnectionStatus {
   phase: 'needsCheck' | 'waiting' | 'connected' | 'disconnected' | 'failed';

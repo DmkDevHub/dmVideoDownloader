@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R3-05] repair portable paths and changed extension IDs
+
+- TC-12/18 파일·등록 부분 PASS. 공백과 한글 경로로 실제 폴더 이동 후 이전 위치 부재, 경로 불일치, 명시 복구와 ID 교체, 이전 ID 거부를 격리 HKCU에서 확인. 설정 창에 기존/현재 경로와 확장 재로드 안내. 실제 브라우저 재연결 검증은 별도.
+
 ## 2026-11-09 — [R3-04] register one extension origin and remove only owned registration
 
 - TC-09/17/19 등록 경계 PASS. 격리 HKCU 실제 등록·읽기·타 복사본 해제 거부, 정확한 ID/절대 매니페스트 확인. Host와 앱이 각각 ID를 검증. Rust 9개·데스크톱 Vitest 13개·Host 프레임/앱 수신 PASS. 실제 Chrome 왕복은 후속 항목.

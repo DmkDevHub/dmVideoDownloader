@@ -7,7 +7,7 @@ const props = withDefaults(defineProps<{
   extensionId: string; savedId: string; busy: boolean; canSave: boolean;
   runtime?: BrowserRuntime; status?: ConnectionStatus;
 }>(), { status: () => ({ phase: 'needsCheck', roundTripConfirmed: false, lastSuccessAt: null }) });
-defineEmits<{ 'update:extensionId': [id: string]; registration: [action: 'register' | 'unregister'] }>();
+defineEmits<{ 'update:extensionId': [id: string]; registration: [action: 'register' | 'repair' | 'unregister'] }>();
 const expanded = ref(false);
 const message = ref('');
 const actionsUnavailable = computed(() => props.busy || !props.canSave || !props.runtime?.connectionActionsAvailable || props.status.phase === 'waiting');
@@ -60,10 +60,15 @@ async function copyAddress() {
     <input id="extension-id" class="full-width" :value="extensionId" maxlength="32" autocomplete="off" spellcheck="false" :aria-invalid="extensionId !== '' && !validExtensionId(extensionId)" @input="$emit('update:extensionId', ($event.target as HTMLInputElement).value)" />
     <p v-if="extensionId && !validExtensionId(extensionId)" class="error">확장 ID는 소문자 a~p 32자여야 합니다.</p>
     <p v-if="extensionId !== savedId" class="hint">ID 변경 · 재등록 필요. 폼 수정이나 취소만으로 등록은 바뀌지 않습니다.</p>
+    <div v-if="runtime?.registrationCode === 'HOST_PATH_MISMATCH'" class="hint path">
+      <p>이전에 등록한 위치 {{ runtime.registeredPath }}</p>
+      <p>이 앱의 등록 위치 {{ runtime.manifestPath }}</p>
+      <p>확장 폴더도 이동했다면 새 폴더를 Chrome에서 다시 로드하고 실제 ID를 입력하세요. 연결 복구/재등록을 누르면 현재 위치로 등록합니다.</p>
+    </div>
     <div class="status-row">
       <button type="button" :disabled="actionsUnavailable || !runtime?.hostAvailable || !validExtensionId(extensionId)" @click="$emit('registration', 'register')">호스트 등록</button>
       <button type="button" disabled>연결 테스트</button>
-      <button type="button" disabled>연결 복구/재등록</button>
+      <button type="button" :disabled="actionsUnavailable || !runtime?.hostAvailable || !validExtensionId(extensionId)" @click="$emit('registration', 'repair')">연결 복구/재등록</button>
       <button type="button" :disabled="actionsUnavailable || !runtime?.registeredPath" @click="$emit('registration', 'unregister')">연결 해제</button>
     </div>
     <p v-if="!runtime?.connectionActionsAvailable" class="hint">현재는 설치 안내와 ID 저장을 제공합니다. 호스트 등록·왕복 테스트·복구·해제 기능은 아직 사용할 수 없습니다.</p>

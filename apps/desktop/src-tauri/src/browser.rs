@@ -15,6 +15,7 @@ pub struct RuntimeInfo {
     registration_code: String,
     registered_path: Option<String>,
     configured_id: String,
+    manifest_path: String,
 }
 
 fn chrome_path() -> Option<PathBuf> {
@@ -30,6 +31,10 @@ fn inspect(root: &Path, id: &str) -> RuntimeInfo {
     let registry = Registry::chrome();
     RuntimeInfo {
         configured_id: id.into(),
+        manifest_path: root
+            .join(dm_video_protocol::MANIFEST)
+            .to_string_lossy()
+            .into_owned(),
         extension_path: extension.to_string_lossy().into_owned(),
         extension_resources_available: [
             "manifest.json",
@@ -69,11 +74,12 @@ pub fn browser_runtime(store: tauri::State<Mutex<Store>>) -> Result<RuntimeInfo,
 #[tauri::command]
 pub fn browser_register(
     extension_id: String,
+    repair: Option<bool>,
     store: tauri::State<Mutex<Store>>,
 ) -> Result<(), String> {
     let mut store = store.lock().map_err(|_| "SETTINGS_BUSY")?;
     Registry::chrome()
-        .register(&mut store, &extension_id)
+        .register(&mut store, &extension_id, repair.unwrap_or(false))
         .map_err(str::to_owned)
 }
 

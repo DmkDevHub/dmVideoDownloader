@@ -93,6 +93,7 @@ impl Registry {
         &self,
         root: &Path,
         id: &str,
+        repair: bool,
     ) -> Result<(tempfile::NamedTempFile, PathBuf), &'static str> {
         let manifest = Manifest::new(root, id).map_err(|_| "INVALID_EXTENSION_ID")?;
         let path = root.join(MANIFEST);
@@ -102,14 +103,37 @@ impl Registry {
         if !manifest.path.is_file() {
             return Err("HOST_MISSING");
         }
-        if self.read()?.is_some_and(|value| !same_path(&value, &path)) {
-            return Err("REGISTRATION_CONFLICT");
-        }
-        if path.exists() {
-            let prior = Manifest::read(&path).map_err(|_| "REGISTRATION_CONFLICT")?;
-            if !same_path(&prior.path, &manifest.path) {
-                return Err("HOST_PATH_MISMATCH");
+        let previous = if path.exists() {
+            Some(Manifest::read(&path).map_err(|_| "REGISTRATION_CONFLICT")?)
+        } else {
+            None
+        };
+        if let Some(registered) = self.read()?.filter(|value| !same_path(value, &path)) {
+            if !repair {
+                return Err("REGISTRATION_CONFLICT");
             }
+            folders::check_path(&registered)?;
+            let owned_path = |entry: &Manifest| {
+                entry
+                    .path
+                    .parent()
+                    .is_some_and(|parent| same_path(&registered, &parent.join(MANIFEST)))
+            };
+            let owned = if registered.exists() {
+                Manifest::read(&registered).is_ok_and(|entry| owned_path(&entry))
+            } else {
+                previous.as_ref().is_some_and(owned_path)
+            };
+            if !owned {
+                return Err("REGISTRATION_CONFLICT");
+            }
+        }
+        if !repair
+            && previous
+                .as_ref()
+                .is_some_and(|prior| !same_path(&prior.path, &manifest.path))
+        {
+            return Err("HOST_PATH_MISMATCH");
         }
         let mut temp = tempfile::Builder::new()
             .prefix(".native-host-")
@@ -122,9 +146,9 @@ impl Registry {
         Manifest::read(temp.path()).map_err(|_| "REGISTRATION_FAILED")?;
         Ok((temp, path))
     }
-    pub fn register(&self, store: &mut Store, id: &str) -> Result<(), &'static str> {
+    pub fn register(&self, store: &mut Store, id: &str, repair: bool) -> Result<(), &'static str> {
         let root = store.root().to_path_buf();
-        let (temp, path) = self.prepare(&root, id)?;
+        let (temp, path) = self.prepare(&root, id, repair)?;
         let mut settings = store.current_settings()?;
         if settings.browser_extension_id != id {
             settings.browser_extension_id = id.to_owned();
@@ -165,11 +189,11 @@ mod tests {
         store.load().unwrap();
         let id = "a".repeat(32);
         assert_eq!(
-            registry.register(&mut store, "*"),
+            registry.register(&mut store, "*", false),
             Err("INVALID_EXTENSION_ID")
         );
         assert_eq!(registry.read().unwrap(), None);
-        registry.register(&mut store, &id).unwrap();
+        registry.register(&mut store, &id, false).unwrap();
         assert_eq!(registry.status(root, &id), Ok(()));
         assert_eq!(Manifest::read(&root.join(MANIFEST)).unwrap().id(), id);
         assert_eq!(
@@ -182,4 +206,52 @@ mod tests {
         assert_eq!(registry.status(root, &id), Err("HOST_NOT_REGISTERED"));
         assert_eq!(store.current_settings().unwrap().browser_extension_id, id);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn moved_install_repairs_absolute_path_and_replaces_id() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let old = sandbox.path().join("이전 폴더");
+    let new = sandbox.path().join("새 위치");
+    std::fs::create_dir(&old).unwrap();
+    std::fs::write(old.join(HOST_EXE), b"fixture").unwrap();
+    let downloads = sandbox
+        .path()
+        .join("Downloads")
+        .to_string_lossy()
+        .into_owned();
+    let mut store = Store::new(old.clone(), downloads.clone());
+    store.load().unwrap();
+    let name = format!(
+        r"Software\DmVideoDownloaderMoveTest-{}",
+        sandbox.path().file_name().unwrap().to_string_lossy()
+    );
+    let registry = Registry {
+        parent: name.clone(),
+    };
+    struct Cleanup(String);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(name);
+    let old_id = "a".repeat(32);
+    let new_id = "b".repeat(32);
+    registry.register(&mut store, &old_id, false).unwrap();
+    std::fs::rename(&old, &new).unwrap();
+    assert!(!old.exists());
+    let mut store = Store::new(new.clone(), downloads);
+    store.load().unwrap();
+    assert_eq!(registry.status(&new, &old_id), Err("HOST_PATH_MISMATCH"));
+    assert_eq!(
+        registry.register(&mut store, &new_id, false),
+        Err("REGISTRATION_CONFLICT")
+    );
+    registry.register(&mut store, &new_id, true).unwrap();
+    assert_eq!(registry.read().unwrap(), Some(new.join(MANIFEST)));
+    assert_eq!(registry.status(&new, &old_id), Err("EXTENSION_ID_MISMATCH"));
+    assert_eq!(registry.status(&new, &new_id), Ok(()));
+    registry.remove(&new).unwrap();
 }
