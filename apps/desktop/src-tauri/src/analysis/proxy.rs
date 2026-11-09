@@ -23,6 +23,8 @@ struct Limits {
     connections: AtomicUsize,
     requests: AtomicUsize,
     bytes: AtomicUsize,
+    #[cfg(test)]
+    fixture: Option<SocketAddr>,
 }
 pub struct Proxy {
     endpoint: String,
@@ -31,10 +33,20 @@ pub struct Proxy {
 }
 impl Proxy {
     pub fn start() -> io::Result<Self> {
+        Self::bind(Limits::default())
+    }
+    #[cfg(test)]
+    pub fn with_test_fixture(fixture: SocketAddr) -> io::Result<Self> {
+        Self::bind(Limits {
+            fixture: Some(fixture),
+            ..Limits::default()
+        })
+    }
+    fn bind(limits: Limits) -> io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         listener.set_nonblocking(true)?;
         let endpoint = format!("http://{}", listener.local_addr()?);
-        let limits = Arc::new(Limits::default());
+        let limits = Arc::new(limits);
         let worker = Arc::clone(&limits);
         let listener = thread::Builder::new().name("analysis-proxy".into()).spawn(move || {
             while !worker.stopped.load(Ordering::Relaxed) {
@@ -181,11 +193,20 @@ fn serve(stream: TcpStream, limits: &Limits) -> io::Result<()> {
     }) {
         return deny(client.get_mut(), limits);
     }
-    let addresses = match resolve(&url) {
+    #[cfg(test)]
+    let fixture = limits
+        .fixture
+        .filter(|_| method != "CONNECT" && url.host_str() == Some("fixture.example.org"));
+    #[cfg(not(test))]
+    let fixture: Option<SocketAddr> = None;
+    let addresses = match fixture
+        .map(|address| Ok(vec![address]))
+        .unwrap_or_else(|| resolve(&url))
+    {
         Ok(addresses) => addresses,
         Err(_) => return unavailable(client.get_mut()),
     };
-    if !approved_addresses(&addresses) {
+    if fixture.is_none() && !approved_addresses(&addresses) {
         return deny(client.get_mut(), limits);
     }
     let Some(mut remote) = addresses

@@ -124,3 +124,8 @@
 - npm run verify PASS. JS/Rust 단위 테스트 56개, 숨김 앱 스모크 4회, 실제 Host 프레이밍, Named Pipe 권한 경계와 중복 ACK, 일반 디버그 EXE/Host/확장 빌드를 확인했다.
 - DM_NATIVE_APP과 DM_NATIVE_HOST를 지정한 npm run test:extension:chrome PASS. 실제 후보 전달, 진단 ACK, 포트 종료, 앱 옵션 교환, 앱 폴더 이동 후 복구·재시험을 수행했다. DM_MEDIA_FIXTURE로 기존 공개 MP4 실제 재생도 다시 확인했다.
 - 등록 통합 테스트는 동일한 Host 이름의 기존 등록 값을 먼저 확인하고 테스트 설치 경로를 기준으로 임시 HKCU 값을 정리했다. 등록 뷰 충돌 테스트는 WOW64가 분리하는 별도 시험 키를 사용했다. 수동 설치·시각·계정/정책 검증 범위는 TEST_PLAN 10절을 따른다.
+
+### R4 영상 분석 검증 (2026-11-09)
+
+- 같은 Windows x64 개발 환경 A의 `D:\ai_workspace\dmVideoDownloader`에서 검증했다. 개발용 Windows yt-dlp 2026.10.26과 FFmpeg 9.0.2 essentials를 `.test-output/r4-dependencies/tools`에 준비했다. [yt-dlp 릴리스](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.26)와 [FFmpeg Windows 빌드](https://www.gyan.dev/ffmpeg/builds/)가 게시한 SHA-256 값으로 받은 파일을 검증했다.
+- TEST_PLAN 11절의 실제 yt-dlp/FFmpeg 테스트 7개 PASS. `DM_R4_TOOL_ROOT`를 지정한 `npm run verify`에서 JS/Rust 단위 테스트 65개, 숨김 앱과 Native Host 스모크, 일반 앱·확장 빌드 PASS. 공개 자산은 [MDN HTML5 예제](https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/extra-video-features.html), [CC0 MP4](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4), [Shaka 예제 목록](https://github.com/shaka-project/shaka-player-embedded/blob/main/sample_xcode_project/sample_xcode_project/assets.plist), [HTTPBin](https://httpbin.org/)을 사용했다.

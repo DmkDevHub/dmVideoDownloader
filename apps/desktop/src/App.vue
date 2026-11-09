@@ -134,8 +134,8 @@ onMounted(async () => {
         const recovered = await invoke<SettingsSnapshot>('recover_settings');
         smokePassed = protectedOriginal && recovered.canSave && recovered.settings.quality === 'best';
         applySnapshot(recovered);
-      } else if (phase === 'bridge' || phase === 'chrome-move-from' || phase === 'chrome-move-to') {
-        const chromeTest = phase !== 'bridge';
+      } else if (['bridge', 'bridge-analysis', 'chrome-move-from', 'chrome-move-to'].includes(phase)) {
+        const chromeTest = phase === 'chrome-move-from' || phase === 'chrome-move-to';
         if (chromeTest) {
           const repair = phase === 'chrome-move-to';
           if (repair && runtime.value?.registrationCode !== 'HOST_PATH_MISMATCH') throw new Error('HOST_PATH_MISMATCH');
@@ -154,6 +154,22 @@ onMounted(async () => {
             smokePassed = smokePassed && connection.value.phase === 'disconnected' && !!connection.value.lastSuccessAt;
           }
           if (!smokePassed) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (phase === 'bridge-analysis' && smokePassed) {
+          await runAnalysis('analyze_candidate', { id: candidates.value[0].id });
+          await nextTick();
+          const candidateShown = analysis.value?.source === 'media' &&
+            document.querySelectorAll('[data-analysis-result] tbody tr').length === 1;
+          address.value = 'https://mdn.github.io/learning-area/html/multimedia-and-embedding/video-and-audio-content/extra-video-features.html';
+          await analyzeAddress();
+          await nextTick();
+          const directShown = (analysis.value as AnalysisReport | undefined)?.source === 'direct' &&
+            document.querySelectorAll('[data-analysis-result] tbody tr').length >= 2;
+          address.value = 'http://127.0.0.1/private';
+          await analyzeAddress();
+          await nextTick();
+          smokePassed = candidateShown && directShown && !analysis.value &&
+            document.querySelector('[data-analysis-message]')?.textContent?.trim() === analysisError('URL_NOT_ALLOWED');
         }
         if (phase === 'chrome-move-to') {
           await invoke('browser_unregister');
@@ -211,10 +227,11 @@ onMounted(async () => {
         <tr v-for="candidate in candidates" :key="candidate.id" data-received-candidate><td>{{ candidate.title }}</td><td>{{ candidate.sourceType.toUpperCase() }}</td><td>미확인</td><td><button type="button" :disabled="analysisBusy" @click="runAnalysis('analyze_candidate', { id: candidate.id })">{{ analyzingCandidate === candidate.id ? '분석 중…' : '분석' }}</button></td></tr>
       </tbody></table></div>
     </section>
-    <p v-if="analysisMessage" role="alert" class="error">{{ analysisMessage }}</p>
+    <p v-if="analysisMessage" role="alert" class="error" data-analysis-message>{{ analysisMessage }}</p>
     <section v-if="analysis" class="panel" aria-label="포맷 분석 결과" data-analysis-result>
       <h2>{{ analysis.title }}</h2>
       <p class="hint" role="status">{{ analysisSource[analysis.source] }}에서 포맷 {{ analysis.formats.length }}개를 확인했습니다.</p>
+      <p v-if="analysis.excludedProtected" class="hint">보호 가능성이 있는 포맷 {{ analysis.excludedProtected }}개를 제외했습니다.</p>
       <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>해상도</th><th>트랙</th><th>영상 코덱</th><th>음성 코덱</th></tr></thead><tbody>
         <tr v-for="format in analysis.formats" :key="format.id">
           <td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ resolution(format) }}</td><td>{{ trackLabel[format.tracks] }}</td>

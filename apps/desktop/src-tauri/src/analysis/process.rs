@@ -79,6 +79,7 @@ pub fn run(
     let scratch = tempfile::tempdir().map_err(|_| RunError::Io)?;
     let job = job()?;
     command
+        .current_dir(scratch.path())
         .env_clear()
         .env("TEMP", scratch.path())
         .env("TMP", scratch.path());

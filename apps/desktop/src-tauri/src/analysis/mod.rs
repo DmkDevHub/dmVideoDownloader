@@ -82,3 +82,4 @@ pub async fn analyze_candidate(
     .map_err(|_| "ANALYSIS_FAILED")?
     .map_err(str::to_owned)
 }
+mod failure;

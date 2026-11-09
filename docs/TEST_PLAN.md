@@ -162,3 +162,18 @@ R2 완료는 확장 측 기능과 위 내부·실제 headless 프로세스 검�
 | 기존 기능 회귀 | npm run verify PASS. Vitest 40개, 데스크톱 Rust 13개, 프로토콜 Rust 3개, 숨김 데스크톱 스모크 4회, Host 프레임과 앱 IPC 프로세스 검사, 일반 EXE/Host/확장 빌드 |
 
 일반 Chrome의 관리 화면에서 수동 설치·클릭·클립보드·시각 인수, 확장 폴더 자체를 옮겨 실제 새 Chrome ID로 다시 로드, 다른 Windows 사용자 계정으로의 ACL 시도, 조직 정책에 의한 실제 차단과 별도 일반 사용자 계정의 권한 거부는 NOT RUN이다. 전체 다운로드·재생 릴리스 인수는 R4 이후에 진행한다.
+
+## 11. R4 공개 영상 분석 검증 (2026-11-09)
+
+| 검증 범위 | 실행 결과 |
+|---|---|
+| TC-13 도구 진단 | 누락·오류·버전 범위 단위 테스트와 실제 Windows yt-dlp 2026.10.26·FFmpeg 9.0.2 호출 PASS |
+| 공개 페이지 및 후보 분석 | MDN HTML5 페이지의 MP4·WebM 2개, 후보 페이지 미지원 후 CC0 MP4 대체 분석 PASS. 실제 Native Host로 받은 후보와 직접 입력 분석 결과가 숨김 WebView의 포맷 표에 표시됨 |
+| TC-04/05 HLS·DASH 분석 부분 | 공개 Shaka HLS에서 11개 포맷과 복수 해상도, DASH에서 20개 포맷과 영상 전용·음성 전용 트랙 PASS. 중복 ID, 해상도·코덱 누락, 음성만 있는 입력 단위 테스트 PASS |
+| TC-10과 URL 실패 | 실제 공개 HTTP 401·403·410 응답을 각각 인증 필요·접근 거부·만료 또는 제거로 분류 PASS. 원본 주소 및 헤더가 포맷 결과에 포함되지 않음 |
+| TC-11 보호 감지 | 공개 Shaka ClearKey DASH의 보호 판정 PASS. 모의 보호 의심·혼합 포맷과 인증·DRM에서 대체 주소를 시도하지 않는 조건 PASS |
+| 내부 주소 차단 | HTTP·HTTPS CONNECT 사설 주소 차단, 공인·사설 혼합 DNS 결과 거부, 실제 yt-dlp가 HTTP 리디렉션을 따라 로컬 서버에 재접속하지 못하는 테스트 PASS. 숨김 WebView의 고정 차단 문구 확인 |
+
+검증된 도구를 둔 포터블 루트의 절대경로를 `DM_R4_TOOL_ROOT`에 지정한다. `cargo test --locked --offline --manifest-path apps/desktop/src-tauri/Cargo.toml --lib analysis:: -- --ignored --nocapture --test-threads=1`은 공개 응답과 실제 도구를 검증한다. 같은 환경에서 `npm run verify`를 실행하면 Native Host 스모크에 숨김 WebView 분석 검증이 추가된다.
+
+화면 시각 인수, 사이트별 지원 범위, 다운로드와 병합·재생은 이 검증 범위 밖이다.

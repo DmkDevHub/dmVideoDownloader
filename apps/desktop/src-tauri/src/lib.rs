@@ -49,7 +49,10 @@ pub fn run() {
                     return Err(dm_video_protocol::Code::ExtensionIdMismatch);
                 }
                 #[cfg(feature = "smoke-test")]
-                if std::env::var("DM_SMOKE_PHASE").as_deref() == Ok("bridge") {
+                if matches!(
+                    std::env::var("DM_SMOKE_PHASE").as_deref(),
+                    Ok("bridge" | "bridge-analysis")
+                ) {
                     return dm_video_protocol::manifest::Manifest::verify(store.root(), id)
                         .map(|()| saved.browser_auto_detect);
                 }
@@ -64,7 +67,13 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    let timeout =
+                        if std::env::var("DM_SMOKE_PHASE").as_deref() == Ok("bridge-analysis") {
+                            95
+                        } else {
+                            30
+                        };
+                    std::thread::sleep(std::time::Duration::from_secs(timeout));
                     handle.exit(1);
                 });
             }

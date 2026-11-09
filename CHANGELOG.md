@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-09 — [R4-05] classify public media analysis failures
+
+- TC-10/11 PASS. 인증 필요·만료/제거·접근 거부·DRM 보호/의심·미지원·네트워크 오류를 분류하며 보호 및 허용되지 않은 주소의 포맷을 제외한다. 실제 HTTP 401/403/410, 공개 ClearKey DASH, 내부 주소 리디렉션 차단, 공개 HLS 11개 포맷, 숨김 WebView 결과/오류 표시를 확인했다. npm run verify 및 실제 도구 테스트 7개 PASS. HTTPS 터널 내부와 화면 시각 인수는 별도 범위이다.
+
 ## 2026-11-09 — [R4-04] normalize media dimensions and track codecs
 
 - 포맷별 가로·세로 해상도, 컨테이너, 영상·음성 코덱과 통합·분리 트랙을 정규화한다. 결측·잘못된 값과 음성 단독 입력 처리, 중복 ID 제거 단위 테스트 PASS. 실제 공개 DASH에서 포맷 20개와 영상 전용·음성 전용 트랙 확인. 타입 검사 통과.

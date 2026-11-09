@@ -1,4 +1,5 @@
 use super::{
+    failure,
     process::{self, RunError},
     proxy,
     tools::{self, State, Tool},
@@ -14,17 +15,22 @@ use std::{
 #[derive(Deserialize)]
 struct RawReport {
     title: Option<String>,
+    webpage_url: Option<String>,
+    has_drm: Option<serde_json::Value>,
     #[serde(default)]
     formats: Vec<RawFormat>,
 }
 #[derive(Deserialize)]
 struct RawFormat {
     format_id: Option<String>,
+    url: Option<String>,
+    manifest_url: Option<String>,
     ext: Option<String>,
     width: Option<i64>,
     height: Option<i64>,
     vcodec: Option<String>,
     acodec: Option<String>,
+    has_drm: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -112,6 +118,7 @@ pub struct Report {
     pub title: String,
     pub formats: Vec<Format>,
     pub source: Source,
+    pub excluded_protected: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -133,6 +140,26 @@ fn format_tag(value: Option<String>, max: usize) -> Option<String> {
 }
 fn report(bytes: &[u8]) -> Result<Report, &'static str> {
     let raw: RawReport = serde_json::from_slice(bytes).map_err(|_| "INVALID_METADATA")?;
+    let protected = |flag: Option<&serde_json::Value>| match flag {
+        Some(serde_json::Value::Bool(true)) => Some("DRM_PROTECTED"),
+        Some(serde_json::Value::String(value)) if value.eq_ignore_ascii_case("maybe") => {
+            Some("POSSIBLY_PROTECTED")
+        }
+        _ => None,
+    };
+    if let Some(reason) = protected(raw.has_drm.as_ref()) {
+        return Err(reason);
+    }
+    if raw
+        .webpage_url
+        .as_deref()
+        .is_some_and(|url| proxy::target(url).is_none())
+    {
+        return Err("URL_NOT_ALLOWED");
+    }
+    let mut excluded_protected = 0;
+    let mut confirmed_protection = false;
+    let mut excluded_address = false;
     let title = raw
         .title
         .as_deref()
@@ -150,6 +177,20 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
     let mut formats: Vec<_> = raw
         .formats
         .into_iter()
+        .filter(|format| {
+            if let Some(reason) = protected(format.has_drm.as_ref()) {
+                excluded_protected += 1;
+                confirmed_protection |= reason == "DRM_PROTECTED";
+                false
+            } else {
+                let allowed = [format.url.as_deref(), format.manifest_url.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .all(|url| proxy::target(url).is_some());
+                excluded_address |= !allowed;
+                allowed
+            }
+        })
         .filter_map(normalize)
         .filter(|format| ids.insert(format.id.clone()))
         .take(256)
@@ -158,6 +199,15 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
         .iter()
         .all(|format| format.tracks == Tracks::AudioOnly)
     {
+        if confirmed_protection {
+            return Err("DRM_PROTECTED");
+        }
+        if excluded_protected > 0 {
+            return Err("POSSIBLY_PROTECTED");
+        }
+        if excluded_address {
+            return Err("URL_NOT_ALLOWED");
+        }
         return Err("NO_FORMATS");
     }
     formats.sort_by_key(|format| std::cmp::Reverse(format.height.unwrap_or(0)));
@@ -165,6 +215,7 @@ fn report(bytes: &[u8]) -> Result<Report, &'static str> {
         title,
         formats,
         source: Source::Direct,
+        excluded_protected,
     })
 }
 
@@ -211,6 +262,10 @@ impl Analyzer {
     pub fn analyze(&self, address: &str) -> Result<Report, &'static str> {
         let address = proxy::target(address).ok_or("URL_NOT_ALLOWED")?;
         let proxy = proxy::Proxy::start().map_err(|_| "ANALYSIS_FAILED")?;
+        self.run(address, proxy)
+    }
+
+    fn run(&self, address: url::Url, proxy: proxy::Proxy) -> Result<Report, &'static str> {
         let mut command = Command::new(&self.exe);
         command
             .args([
@@ -259,17 +314,7 @@ impl Analyzer {
             _ => "YT_DLP_FAILED",
         })?;
         if !output.success {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(
-                if error
-                    .lines()
-                    .any(|line| line.starts_with("ERROR: Unsupported URL:"))
-                {
-                    "UNSUPPORTED_URL"
-                } else {
-                    "ANALYSIS_FAILED"
-                },
-            );
+            return Err(failure::classify(&output.stderr));
         }
         report(&output.stdout)
     }
@@ -280,11 +325,94 @@ mod tests {
     use super::*;
     #[test]
     fn projects_only_safe_metadata() {
-        let result = report(br#"{"title":"Video","formats":[{"format_id":"18","ext":"mp4","height":720,"url":"https://example.org/?token=secret"}],"http_headers":{"Cookie":"secret"}}"#).unwrap();
+        let result = report(br#"{"title":"Video","formats":[{"format_id":"18","ext":"mp4","height":720,"url":"https://example.org/video.mp4"},{"format_id":"19","url":"https://example.org/?token=secret"}],"http_headers":{"Cookie":"secret"}}"#).unwrap();
         let json = serde_json::to_value(result).unwrap();
         assert_eq!(json["formats"][0]["height"], 720);
+        assert_eq!(json["formats"].as_array().unwrap().len(), 1);
         assert!(!json.to_string().contains("secret"));
+        assert!(matches!(
+            report(
+                br#"{"formats":[{"format_id":"19","manifest_url":"http://127.0.0.1/video.mpd"}]}"#
+            ),
+            Err("URL_NOT_ALLOWED")
+        ));
         assert!(matches!(report(br#"{"formats":[]}"#), Err("NO_FORMATS")));
+    }
+
+    #[test]
+    fn protected_tracks_never_appear_in_the_report() {
+        assert!(matches!(
+            report(br#"{"has_drm":true,"formats":[{"format_id":"v"}]}"#),
+            Err("DRM_PROTECTED")
+        ));
+        assert!(matches!(
+            report(br#"{"formats":[{"format_id":"v","has_drm":"maybe"}]}"#),
+            Err("POSSIBLY_PROTECTED")
+        ));
+        let mixed = report(br#"{"formats":[{"format_id":"clear","ext":"mp4"},{"format_id":"protected","has_drm":true}]}"#).unwrap();
+        assert_eq!(mixed.excluded_protected, 1);
+        assert_eq!(mixed.formats[0].id, "clear");
+        assert_eq!(mixed.formats.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_public_error_responses() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let analyzer = Analyzer::open(&root).unwrap();
+        for (address, expected) in [
+            ("https://httpbin.org/status/401", "AUTH_REQUIRED"),
+            ("https://httpbin.org/status/403", "ACCESS_DENIED"),
+            ("https://httpbin.org/status/410", "EXPIRED_OR_GONE"),
+            (
+                "https://storage.googleapis.com/shaka-demo-assets/angel-one-clearkey/dash.mpd",
+                "DRM_PROTECTED",
+            ),
+        ] {
+            assert_eq!(
+                analyzer.analyze(address).err(),
+                Some(expected),
+                "fixture for {expected}"
+            );
+            println!("PUBLIC_FAILURE_PASS: {expected}");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries"]
+    fn real_redirect_cannot_reach_loopback() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let socket = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut connection = BufReader::new(stream);
+            let mut line = String::new();
+            while connection.read_line(&mut line).unwrap() != 0 && line != "\r\n" {
+                line.clear();
+            }
+            write!(connection.get_mut(), "HTTP/1.1 302 Found\r\nLocation: http://{socket}/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            listener
+        });
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let analyzer = Analyzer::open(&root).unwrap();
+        let outcome = analyzer.run(
+            proxy::target("http://fixture.example.org/page").unwrap(),
+            proxy::Proxy::with_test_fixture(socket).unwrap(),
+        );
+        assert_eq!(outcome.err(), Some("URL_NOT_ALLOWED"));
+        let listener = server.join().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        println!("REDIRECT_BLOCKED_PASS");
     }
 
     #[test]
@@ -352,6 +480,10 @@ mod tests {
         for reason in [
             "UNSUPPORTED_URL",
             "NO_FORMATS",
+            "AUTH_REQUIRED",
+            "DRM_PROTECTED",
+            "POSSIBLY_PROTECTED",
+            "EXPIRED_OR_GONE",
             "URL_NOT_ALLOWED",
             "ANALYSIS_TIMEOUT",
             "ANALYSIS_FAILED",
@@ -417,5 +549,24 @@ mod tests {
             .iter()
             .any(|format| format.container.as_deref() == Some("mp4")));
         println!("PUBLIC_FORMATS_PASS: {} format(s)", report.formats.len());
+    }
+
+    #[test]
+    #[ignore = "requires verified developer binaries and public network access"]
+    fn real_public_hls_formats() {
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let report = Analyzer::open(&root)
+            .unwrap()
+            .analyze("https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8")
+            .unwrap();
+        assert!(
+            report
+                .formats
+                .iter()
+                .filter(|format| format.height.is_some())
+                .count()
+                >= 2
+        );
+        println!("HLS_FORMATS_PASS: {} format(s)", report.formats.len());
     }
 }

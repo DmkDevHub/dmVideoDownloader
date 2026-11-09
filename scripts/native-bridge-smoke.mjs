@@ -13,6 +13,13 @@ const desktop = join(root, 'VideoDownloader.exe');
 const host = join(root, 'VideoNativeHost.exe');
 copyFileSync(appBinary, desktop);
 copyFileSync(hostBinary, host);
+const toolRoot = process.env.DM_R4_TOOL_ROOT;
+if (toolRoot) {
+  mkdirSync(join(root, 'tools'));
+  for (const exe of ['yt-dlp.exe', 'ffmpeg.exe']) {
+    copyFileSync(join(toolRoot, 'tools', exe), join(root, 'tools', exe));
+  }
+}
 mkdirSync(join(root, 'data'));
 writeFileSync(join(root, 'data/settings.json'), JSON.stringify({ schemaVersion: 1, downloadDirectory: join(root, 'Downloads'),
   quality: 'best', format: 'auto', filename: 'title', concurrentDownloads: 2, retryCount: 3,
@@ -20,13 +27,15 @@ writeFileSync(join(root, 'data/settings.json'), JSON.stringify({ schemaVersion: 
 writeFileSync(join(root, 'native-host-manifest.json'), JSON.stringify({ name: 'com.browser_video_downloader.host',
   description: 'Browser Video Downloader bridge', path: host, type: 'stdio', allowed_origins: ['chrome-extension://' + 'a'.repeat(32) + '/'] }));
 const app = spawn(desktop, [], { windowsHide: true, env: { ...process.env,
-  WEBVIEW2_USER_DATA_FOLDER: join(root, 'webview-test'), DM_SMOKE_ROOT: root, DM_SMOKE_PHASE: 'bridge' } });
+  WEBVIEW2_USER_DATA_FOLDER: join(root, 'webview-test'), DM_SMOKE_ROOT: root,
+  DM_SMOKE_PHASE: toolRoot ? 'bridge-analysis' : 'bridge' } });
 let stdout = ''; app.stderr.resume();
 app.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
 const exit = new Promise((done, reject) => { app.on('error', reject); app.on('exit', done); });
 const pause = ms => new Promise(done => setTimeout(done, ms));
 const message = { version: 1, type: 'VIDEO_CANDIDATE', requestId: 'bridge-smoke', payload: {
-  candidateId: 'bridge-row', tabId: 1, pageUrl: 'https://example.org/watch', mediaUrl: 'https://example.org/a.mp4',
+  candidateId: 'bridge-row', tabId: 1, pageUrl: 'https://example.org/',
+  mediaUrl: toolRoot ? 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' : 'https://example.org/a.mp4',
   sourceType: 'mp4', detectedAt: '2026-11-09T00:00:00Z',
 } };
 const data = Buffer.from(JSON.stringify(message));
@@ -84,4 +93,5 @@ try {
   assert.equal(await exit, 0);
   assert.match(stdout, /SMOKE_PASS:/u);
   console.log('NATIVE_BRIDGE_PASS: verified Windows pipe, untrusted process rejection, candidate row, repeat ACK');
+  if (toolRoot) console.log('ANALYSIS_SMOKE_PASS: public page, candidate media fallback, private URL rejected in the hidden WebView');
 } finally { if (app.exitCode === null) app.kill(); }

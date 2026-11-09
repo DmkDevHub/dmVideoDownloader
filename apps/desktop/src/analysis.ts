@@ -11,6 +11,7 @@ export interface AnalysisReport {
   title: string;
   formats: Format[];
   source: 'direct' | 'page' | 'media';
+  excludedProtected: number;
 }
 export const analysisSource = { direct: '입력한 주소', page: '후보의 페이지 주소', media: '감지한 미디어 주소' };
 export const trackLabel = { audioVideo: '영상·음성', videoOnly: '영상 전용', audioOnly: '음성 전용', unknown: '구성 미확인' };
@@ -27,6 +28,14 @@ export function analysisError(error: unknown): string {
     case 'YT_DLP_FAILED': return 'yt-dlp를 실행하지 못했습니다. 설정에서 도구 상태를 확인하세요.';
     case 'ANALYSIS_BUSY': return '다른 주소를 분석하고 있습니다.';
     case 'ANALYSIS_TIMEOUT': return '분석 응답 시간이 초과됐습니다.';
+    case 'AUTH_REQUIRED': return '이 영상에 접근하려면 로그인이 필요합니다. 공개 주소를 사용하세요.';
+    case 'DRM_PROTECTED': return '이 영상에서 DRM 보호가 확인됐습니다.';
+    case 'POSSIBLY_PROTECTED': return '이 영상은 보호됐거나 분석할 수 없는 형식일 수 있습니다.';
+    case 'EXPIRED_OR_GONE': return '주소가 만료됐거나 더 이상 제공되지 않습니다. 원래 페이지에서 새 주소를 확인하세요.';
+    case 'ACCESS_DENIED': return '서버가 접근을 거부했습니다. 이 응답만으로 원인을 확인할 수 없습니다.';
+    case 'NOT_FOUND': return '서버에서 영상 주소를 찾지 못했습니다.';
+    case 'NETWORK_ERROR': return '영상 서버에 연결하지 못했습니다. 네트워크 상태를 확인하세요.';
+    case 'INVALID_METADATA': return '영상 서버에서 받은 포맷 정보를 해석하지 못했습니다.';
     case 'NO_FORMATS': return '확인할 수 있는 영상 포맷이 없습니다.';
     case 'UNSUPPORTED_URL': return '이 페이지에서 지원되는 공개 영상을 찾지 못했습니다.';
     case 'CANDIDATE_MISSING': return '후보가 목록에 없습니다. Chrome에서 다시 선택하세요.';
