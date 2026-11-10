@@ -9,6 +9,7 @@ use reqwest::{
     redirect::Policy,
 };
 use std::{
+    cell::Cell,
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
     ops::RangeInclusive,
@@ -19,6 +20,8 @@ use url::Url;
 
 pub(super) use proxy::MAX_MEDIA_SEGMENTS as MAX_PARTS;
 const MAX_PLAYLIST: usize = 1024 * 1024;
+// The slowest setting can take about 68 minutes to consume the proxy's 2 GiB budget.
+const RELAY_TIMEOUT: Duration = Duration::from_secs(600 + 4096);
 
 #[derive(PartialEq, Eq)]
 pub(super) struct Part {
@@ -78,11 +81,12 @@ pub(super) struct StreamClient<'a> {
     proxy: proxy::Proxy,
     control: &'a Control,
     started: Instant,
+    throttled: Cell<Duration>,
 }
 
 impl<'a> StreamClient<'a> {
     pub fn new(control: &'a Control) -> Result<Self, &'static str> {
-        let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
+        let proxy = proxy::Proxy::download(RELAY_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
         Self::with_proxy(control, proxy)
     }
 
@@ -99,6 +103,7 @@ impl<'a> StreamClient<'a> {
             proxy,
             control,
             started: Instant::now(),
+            throttled: Cell::default(),
         })
     }
 
@@ -110,10 +115,16 @@ impl<'a> StreamClient<'a> {
         if self.proxy.limited() {
             return Err("DOWNLOAD_LIMIT");
         }
-        if self.started.elapsed() >= TRANSFER_TIMEOUT {
+        if self.started.elapsed().saturating_sub(self.throttled.get()) >= TRANSFER_TIMEOUT {
             return Err("DOWNLOAD_TIMEOUT");
         }
         Ok(())
+    }
+
+    fn charge_payload(&self, bytes: usize) -> Result<(), &'static str> {
+        let waited = self.control.consume(bytes)?;
+        self.throttled.set(self.throttled.get() + waited);
+        self.check()
     }
 
     fn get(&self, mut url: Url, range: Option<RangeRequest<'_>>) -> Result<Response, &'static str> {
@@ -316,6 +327,7 @@ impl<'a> StreamClient<'a> {
                 if expected.is_some_and(|expected| count > expected) {
                     return Err("STREAM_RESPONSE_INVALID");
                 }
+                self.charge_payload(n)?;
                 file.write_all(&buffer[..n])
                     .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
                 downloaded += n as u64;
@@ -510,6 +522,7 @@ impl<'a> StreamClient<'a> {
             if total.is_some_and(|size| next > size) {
                 return Err("STREAM_RESPONSE_INVALID");
             }
+            self.charge_payload(n)?;
             file.write_all(&buffer[..n])
                 .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
             *downloaded = next;

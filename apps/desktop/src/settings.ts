@@ -7,6 +7,7 @@ export interface Settings {
   format: 'auto' | 'mp4' | 'mkv';
   filename: 'title' | 'title-id' | 'date-title';
   concurrentDownloads: number;
+  speedLimitKib?: number;
   retryCount: 0 | 1 | 3 | 5;
   browserAutoDetect: boolean;
   browserExtensionId: string;

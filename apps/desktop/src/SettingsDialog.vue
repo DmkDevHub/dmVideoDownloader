@@ -41,6 +41,10 @@ onMounted(() => dialog.value?.showModal());
         <label>저장 형식<select v-model="draft.format"><option value="auto">자동</option><option value="mp4">MP4</option><option value="mkv">MKV</option></select></label>
         <label>파일 이름<select v-model="draft.filename"><option value="title">제목</option><option value="title-id">제목-ID</option><option value="date-title">날짜-제목</option></select></label>
         <label>동시 다운로드<select v-model="draft.concurrentDownloads"><option v-for="n in 4" :key="n" :value="n">{{ n }}개</option></select></label>
+        <label>전체 다운로드 속도<select :value="draft.speedLimitKib ?? 0" @change="draft.speedLimitKib = Number(($event.target as HTMLSelectElement).value)">
+          <option :value="0">무제한</option><option :value="512">512 KiB/s</option>
+          <option v-for="n in [1, 2, 5, 10]" :key="n" :value="n * 1024">{{ n }} MiB/s</option>
+        </select></label>
         <label>실패 재시도<select v-model="draft.retryCount"><option v-for="n in [0, 1, 3, 5]" :key="n" :value="n">{{ n }}회</option></select></label>
       </fieldset>
       <fieldset :disabled="busy">

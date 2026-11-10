@@ -14,6 +14,8 @@ pub struct Settings {
     pub format: Format,
     pub filename: Filename,
     pub concurrent_downloads: u8,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub speed_limit_kib: u32,
     pub retry_count: u8,
     pub browser_auto_detect: bool,
     #[serde(default)]
@@ -49,6 +51,10 @@ pub enum Filename {
     DateTitle,
 }
 
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
 impl Settings {
     pub fn defaults(directory: String) -> Self {
         Self {
@@ -58,6 +64,7 @@ impl Settings {
             format: Format::Auto,
             filename: Filename::Title,
             concurrent_downloads: 2,
+            speed_limit_kib: 0,
             retry_count: 3,
             browser_auto_detect: true,
             browser_extension_id: String::new(),
@@ -69,6 +76,7 @@ impl Settings {
             return Err("UNSUPPORTED_SETTINGS_VERSION");
         }
         if !(1..=4).contains(&self.concurrent_downloads)
+            || ![0, 512, 1024, 2048, 5120, 10240].contains(&self.speed_limit_kib)
             || ![0, 1, 3, 5].contains(&self.retry_count)
         {
             return Err("INVALID_SETTINGS");
@@ -324,6 +332,7 @@ mod tests {
             ("schemaVersion", serde_json::json!(2)),
             ("quality", serde_json::json!("480")),
             ("concurrentDownloads", serde_json::json!(0)),
+            ("speedLimitKib", serde_json::json!(1)),
             ("retryCount", serde_json::json!(2)),
             ("browserAutoDetect", serde_json::json!("true")),
             ("browserExtensionId", serde_json::json!("*")),

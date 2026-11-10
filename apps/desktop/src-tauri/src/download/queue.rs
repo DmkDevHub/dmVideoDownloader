@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     sync::{Arc, Condvar, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, State};
 
@@ -34,6 +34,13 @@ enum Signal {
 pub(super) struct Control {
     signal: Mutex<Signal>,
     wake: Condvar,
+    bandwidth: Arc<Mutex<Option<Bandwidth>>>,
+}
+
+struct Bandwidth {
+    bytes_per_second: f64,
+    available: f64,
+    updated: Instant,
 }
 
 impl Control {
@@ -63,6 +70,33 @@ impl Control {
                 .wait_timeout_while(signal, delay, |signal| *signal == Signal::Run)
                 .unwrap(),
         );
+    }
+
+    pub fn consume(&self, bytes: usize) -> Result<Duration, &'static str> {
+        let mut waited = Duration::ZERO;
+        loop {
+            self.check()?;
+            let delay = {
+                let mut bandwidth = self.bandwidth.lock().unwrap();
+                let Some(bucket) = bandwidth.as_mut() else {
+                    return Ok(waited);
+                };
+                let now = Instant::now();
+                bucket.available = (bucket.available
+                    + (now - bucket.updated).as_secs_f64() * bucket.bytes_per_second)
+                    .min((64 * 1024) as f64);
+                bucket.updated = now;
+                if bucket.available >= bytes as f64 {
+                    bucket.available -= bytes as f64;
+                    return Ok(waited);
+                }
+                Duration::from_secs_f64((bytes as f64 - bucket.available) / bucket.bytes_per_second)
+                    .min(Duration::from_millis(25))
+            };
+            let start = Instant::now();
+            self.wait(delay);
+            waited += start.elapsed();
+        }
     }
     pub fn commit<T>(
         &self,
@@ -147,6 +181,7 @@ impl Default for Jobs {
 #[derive(Default)]
 pub struct Queue {
     jobs: Mutex<Jobs>,
+    bandwidth: Arc<Mutex<Option<Bandwidth>>>,
 }
 
 #[derive(Deserialize)]
@@ -267,7 +302,10 @@ impl Queue {
             .iter_mut()
             .find(|job| job.view.phase == Phase::Queued)?;
         let work = Arc::clone(job.work.as_ref()?);
-        let control = Arc::new(Control::default());
+        let control = Arc::new(Control {
+            bandwidth: Arc::clone(&self.bandwidth),
+            ..Control::default()
+        });
         job.control = Some(Arc::clone(&control));
         job.view.phase = Phase::Analyzing;
         Some((job.view.id, work, control))
@@ -302,6 +340,23 @@ impl Queue {
     pub fn set_limit(self: &Arc<Self>, app: &AppHandle, limit: u8) {
         self.jobs.lock().unwrap().limit = usize::from(limit.clamp(1, 4));
         self.schedule(app);
+    }
+
+    pub fn set_speed_limit(&self, kib: u32) {
+        let mut bandwidth = self.bandwidth.lock().unwrap();
+        let bytes_per_second = f64::from(kib) * 1024.0;
+        if bandwidth
+            .as_ref()
+            .map_or(0.0, |bucket| bucket.bytes_per_second)
+            == bytes_per_second
+        {
+            return;
+        }
+        *bandwidth = (kib > 0).then(|| Bandwidth {
+            bytes_per_second,
+            available: 0.0,
+            updated: Instant::now(),
+        });
     }
 
     fn run(
@@ -618,6 +673,39 @@ mod tests {
         assert_eq!(queue.completed_file(id).unwrap(), path);
         std::fs::remove_file(&path).unwrap();
         assert_eq!(queue.completed_file(id), Err("DOWNLOAD_FILE_NOT_FOUND"));
+    }
+
+    #[test]
+    fn bandwidth_limit_is_shared_and_waiting_can_be_interrupted() {
+        let queue = Queue::default();
+        let mut first = work();
+        first.settings.concurrent_downloads = 2;
+        let mut second = work();
+        second.settings.concurrent_downloads = 2;
+        queue.enqueue(first).unwrap();
+        queue.enqueue(second).unwrap();
+        let (_, _, first) = queue.claim().unwrap();
+        let (_, _, second) = queue.claim().unwrap();
+        assert_eq!(first.consume(64 * 1024).unwrap(), Duration::ZERO);
+        queue.set_speed_limit(512);
+        let started = Instant::now();
+        let download = |control: &Control| {
+            for _ in 0..2 {
+                control.consume(64 * 1024).unwrap();
+            }
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(|| download(&first));
+            scope.spawn(|| download(&second));
+        });
+        assert!(started.elapsed() >= Duration::from_millis(470));
+        std::thread::scope(|scope| {
+            let waiting = scope.spawn(|| first.consume(64 * 1024));
+            first.interrupt(Signal::Pause).unwrap();
+            assert_eq!(waiting.join().unwrap(), Err("DOWNLOAD_INTERRUPTED"));
+        });
+        queue.set_speed_limit(0);
+        assert_eq!(second.consume(64 * 1024).unwrap(), Duration::ZERO);
     }
 
     #[test]

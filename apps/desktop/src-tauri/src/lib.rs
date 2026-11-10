@@ -184,6 +184,7 @@ fn recover_settings(
 ) -> Result<settings::Snapshot, String> {
     let snapshot = store.lock().map_err(|_| "SETTINGS_BUSY")?.recover()?;
     bridge.invalidate();
+    queue.set_speed_limit(snapshot.settings.speed_limit_kib);
     queue
         .inner()
         .set_limit(&app, snapshot.settings.concurrent_downloads);
@@ -193,12 +194,11 @@ fn recover_settings(
 #[tauri::command]
 fn load_settings(
     store: tauri::State<std::sync::Mutex<settings::Store>>,
+    queue: tauri::State<Arc<download::queue::Queue>>,
 ) -> Result<settings::Snapshot, String> {
-    store
-        .lock()
-        .map_err(|_| "SETTINGS_BUSY")?
-        .load()
-        .map_err(str::to_owned)
+    let snapshot = store.lock().map_err(|_| "SETTINGS_BUSY")?.load()?;
+    queue.set_speed_limit(snapshot.settings.speed_limit_kib);
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -218,6 +218,7 @@ fn save_settings(
     if id_changed {
         bridge.invalidate();
     }
+    queue.set_speed_limit(saved.speed_limit_kib);
     queue.inner().set_limit(&app, saved.concurrent_downloads);
     Ok(saved)
 }
