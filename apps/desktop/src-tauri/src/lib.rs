@@ -109,6 +109,7 @@ pub fn run() {
             browser::open_extension_folder,
             browser::open_chrome_extensions,
             browser::open_download_folder,
+            download::queue::reveal_download,
             #[cfg(feature = "smoke-test")]
             bridge::smoke_bridge_received,
             #[cfg(feature = "smoke-test")]

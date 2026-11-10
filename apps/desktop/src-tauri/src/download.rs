@@ -43,6 +43,7 @@ enum Continuation {
 
 struct Saved {
     filename: String,
+    directory: PathBuf,
     height: Option<u32>,
 }
 
@@ -204,6 +205,7 @@ fn download(
     let filename = control.commit(|| publish(&path, &directory, &stem, output_ext))?;
     Ok(Saved {
         filename,
+        directory,
         height: format.height,
     })
 }

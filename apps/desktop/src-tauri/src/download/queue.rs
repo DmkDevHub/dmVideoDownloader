@@ -122,6 +122,7 @@ pub struct JobView {
 
 struct Job {
     view: JobView,
+    saved_path: Option<PathBuf>,
     work: Option<Arc<Work>>,
     control: Option<Arc<Control>>,
 }
@@ -187,6 +188,7 @@ impl Queue {
                 can_retry: false,
             },
             work: Some(Arc::new(work)),
+            saved_path: None,
             control: None,
         });
         Ok(id)
@@ -368,6 +370,7 @@ impl Queue {
                 {
                     notification = Some(saved.filename.clone());
                 }
+                job.saved_path = Some(saved.directory.join(&saved.filename));
                 job.view.filename = Some(saved.filename);
                 job.view.height = saved.height;
                 job.work = None;
@@ -418,6 +421,25 @@ impl Queue {
             .entries
             .iter()
             .any(|job| job.control.is_some())
+    }
+
+    fn completed_file(&self, id: u32) -> Result<PathBuf, &'static str> {
+        let path = self
+            .jobs
+            .lock()
+            .unwrap()
+            .entries
+            .iter()
+            .find(|job| job.view.id == id)
+            .ok_or("DOWNLOAD_JOB_MISSING")?
+            .saved_path
+            .clone()
+            .ok_or("DOWNLOAD_ACTION_UNAVAILABLE")?;
+        crate::folders::check_path(&path)?;
+        if !path.is_file() {
+            return Err("DOWNLOAD_FILE_NOT_FOUND");
+        }
+        Ok(path)
     }
 }
 
@@ -483,6 +505,11 @@ pub fn download_action(
     queue.action(id, action)?;
     queue.inner().schedule(&app);
     Ok(())
+}
+
+#[tauri::command]
+pub fn reveal_download(id: u32, queue: State<'_, Arc<Queue>>) -> Result<(), String> {
+    crate::browser::select_file(&queue.completed_file(id)?).map_err(str::to_owned)
 }
 
 #[cfg(test)]
@@ -561,6 +588,7 @@ mod tests {
         let saved = || {
             Ok(Saved {
                 filename: "video.mp4".into(),
+                directory: PathBuf::new(),
                 height: None,
             })
         };
@@ -568,6 +596,28 @@ mod tests {
         assert_eq!(queue.claim().unwrap().0, third);
         assert!(queue.finish(second, saved()).is_none());
         assert!(queue.finish(third, Err("NETWORK_ERROR")).is_none());
+    }
+
+    #[test]
+    fn reveal_resolves_the_actual_saved_file_and_handles_removal() {
+        let folder = tempfile::tempdir().unwrap();
+        let queue = Queue::default();
+        let id = queue.enqueue(work()).unwrap();
+        assert_eq!(queue.completed_file(id), Err("DOWNLOAD_ACTION_UNAVAILABLE"));
+        let filename = "영상, 이름 (2).mp4";
+        let path = folder.path().join(filename);
+        std::fs::write(&path, b"video").unwrap();
+        queue.finish(
+            id,
+            Ok(Saved {
+                filename: filename.into(),
+                directory: folder.path().into(),
+                height: None,
+            }),
+        );
+        assert_eq!(queue.completed_file(id).unwrap(), path);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(queue.completed_file(id), Err("DOWNLOAD_FILE_NOT_FOUND"));
     }
 
     #[test]

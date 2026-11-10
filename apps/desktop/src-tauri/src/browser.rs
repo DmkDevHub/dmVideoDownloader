@@ -156,6 +156,35 @@ fn open_folder(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn select_file(path: &Path) -> Result<(), &'static str> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+    use windows_sys::Win32::{
+        Foundation::RPC_E_CHANGED_MODE,
+        System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
+        UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems},
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // The shell calls use the current thread's COM apartment and a null-terminated path.
+    unsafe {
+        let initialized = CoInitializeEx(ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        if initialized < 0 && initialized != RPC_E_CHANGED_MODE {
+            return Err("DOWNLOAD_REVEAL_FAILED");
+        }
+        let item = ILCreateFromPathW(wide.as_ptr());
+        let selected = if item.is_null() {
+            false
+        } else {
+            let result = SHOpenFolderAndSelectItems(item, 0, ptr::null(), 0);
+            ILFree(item);
+            result >= 0
+        };
+        if initialized >= 0 {
+            CoUninitialize();
+        }
+        selected.then_some(()).ok_or("DOWNLOAD_REVEAL_FAILED")
+    }
+}
+
 #[tauri::command]
 pub fn open_extension_folder(store: tauri::State<Mutex<Store>>) -> Result<(), String> {
     let root = store

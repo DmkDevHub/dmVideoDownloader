@@ -112,6 +112,12 @@ async function openDownloadFolder() {
   catch { actionMessage.value = '다운로드 폴더를 열 수 없습니다. 저장 위치·설정 파일·권한을 확인하세요.'; }
 }
 
+async function revealDownload(id: number) {
+  downloadMessage.value = '';
+  try { await invoke('reveal_download', { id }); }
+  catch (error) { downloadMessage.value = downloadError(error); }
+}
+
 function applySnapshot(snapshot: SettingsSnapshot) {
   snapshotState.value = snapshot;
   editor.value = createSettingsEditor(snapshot.settings, snapshot.defaults);
@@ -321,6 +327,7 @@ onMounted(async () => {
           <td>{{ downloadPhase[job.phase] }}<span v-if="job.phase === 'retrying'"> ({{ job.attempt + 1 }}회차)</span><span v-if="job.error" class="error"> · {{ downloadError(job.error) }}</span></td>
           <td>
             <span v-if="job.filename">{{ job.filename }}</span>
+            <button v-if="job.phase === 'completed'" type="button" @click="revealDownload(job.id)">탐색기에서 보기</button>
             <button v-if="['queued', 'analyzing', 'downloading', 'retrying'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'pause')">일시정지</button>
             <button v-if="job.phase === 'paused'" type="button" @click="changeDownload(job.id, 'resume')">재개</button>
             <button v-if="job.canRetry || ['queued', 'analyzing', 'downloading', 'merging', 'retrying', 'pausing', 'paused'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'cancel')">취소</button>

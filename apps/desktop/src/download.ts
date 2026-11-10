@@ -44,6 +44,8 @@ export function downloadError(error: unknown) {
   switch (error) {
     case 'DOWNLOAD_QUEUE_FULL': return '다운로드 목록이 가득 찼습니다.';
     case 'DOWNLOAD_JOB_MISSING': return '다운로드 작업을 찾을 수 없습니다.';
+    case 'DOWNLOAD_FILE_NOT_FOUND': return '저장한 영상이 이동되었거나 삭제되었습니다.';
+    case 'DOWNLOAD_REVEAL_FAILED': return '탐색기에서 저장한 영상을 표시하지 못했습니다.';
     case 'DOWNLOAD_ACTION_UNAVAILABLE': return '현재 상태에서 해당 작업을 할 수 없습니다.';
     case 'DOWNLOAD_FORMAT_UNSUPPORTED': return '저장할 수 있는 영상 포맷을 찾지 못했습니다.';
     case 'HLS_PLAYLIST_UNSUPPORTED': return '지원하지 않는 HLS 재생목록 구성입니다.';
