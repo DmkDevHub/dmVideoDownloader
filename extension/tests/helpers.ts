@@ -20,9 +20,10 @@ export function chromeFixture() {
   const api = {
     runtime, storage: { session: storage(session), local: storage(local), onChanged: changed },
     tabs: { get: vi.fn(async (id: number) => ({ id, url: 'https://example.org/watch', title: 'Public video' })),
-      query: vi.fn(async () => [{ id: 1, url: 'https://example.org/watch' }]), sendMessage: vi.fn(async () => undefined), onUpdated: updated, onRemoved: removed },
+      query: vi.fn(async () => [{ id: 1, url: 'https://example.org/watch' }]), sendMessage: vi.fn(async (): Promise<unknown> => undefined), onUpdated: updated, onRemoved: removed },
     webNavigation: { onCommitted: committed, onHistoryStateUpdated: history, onReferenceFragmentUpdated: fragment,
-      getAllFrames: vi.fn(async () => [{ frameId: 0, documentId: 'doc-1', url: 'https://example.org/watch' }]) },
+      getAllFrames: vi.fn(async () => [{ frameId: 0, documentId: 'doc-1', url: 'https://example.org/watch' }]),
+      getFrame: vi.fn(async () => ({ documentId: 'doc-1', url: 'https://example.org/watch', documentLifecycle: 'active' })) },
     webRequest: { onResponseStarted: response }, action: { setBadgeText: vi.fn(async () => undefined) },
   };
   const sender = { id: runtime.id, url: runtime.getURL('popup.html') };

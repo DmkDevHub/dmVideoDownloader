@@ -194,6 +194,16 @@ try {
   assert.equal(shadowRequests, 0);
   assert.deepEqual((await stateForTab()).candidates.map(r => r.candidateId), restored.candidates.map(r => r.candidateId));
   console.log('SHADOW_BASELINE_PASS: no requests or automatic candidates from the shadow fixtures');
+  await evaluate(popupSession, `chrome.tabs.update(${tabId}, {active:true}).then(() => true)`);
+  await until(async () => await evaluate(popupSession, '!document.querySelector("#detail-scan").disabled'), 'detail scan button available');
+  assert.deepEqual(await evaluate(popupSession, 'chrome.runtime.sendMessage({type:"DETAIL_SCAN"})'), { code: 'ok', added: 1 });
+  const scanned = (await stateForTab()).candidates;
+  assert.equal(scanned.length, restored.candidates.length + 1);
+  assert.ok(scanned.some(row => row.mediaUrl.endsWith('/scan-open.mp4')));
+  assert.ok(!scanned.some(row => /scan-(?:closed|sensitive)|^blob:/u.test(row.mediaUrl)));
+  assert.deepEqual(await evaluate(popupSession, 'chrome.runtime.sendMessage({type:"DETAIL_SCAN"})'), { code: 'ok', added: 0 });
+  assert.equal(shadowRequests, 0);
+  console.log('SHADOW_DETAIL_PASS: 0 to 1 candidate, deduplicated and no network requests');
   await send('Page.navigate', { url: pageUrl.replace('/watch', '/replacement') }, pageSession);
   await until(async () => await evaluate(pageSession, 'globalThis.document?.readyState === "complete" && location.pathname === "/replacement"'), 'full navigation');
   await until(async () => (await stateForTab()).candidates.length === 0, 'full navigation cleanup');
@@ -218,6 +228,7 @@ try {
   }
   await evaluate(popupSession, 'chrome.storage.local.set({lastRuntimeSettings:{browserAutoDetect:false}}).then(() => true)');
   await until(async () => (await stateForTab()).autoDetect === false && (await stateForTab()).candidates.length === 0, 'last-confirmed auto-detect off');
+  assert.deepEqual(await evaluate(popupSession, 'chrome.runtime.sendMessage({type:"DETAIL_SCAN"})'), { code: 'disabled' });
   assert.equal(await evaluate(popupSession, `chrome.action.getBadgeText({tabId:${tabId}})`), '');
   await evaluate(pageSession, 'fetch("/disabled.mp4").then(() => true)');
   await pause(200); assert.equal((await stateForTab()).candidates.length, 0);

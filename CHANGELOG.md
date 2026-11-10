@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-10 — [R8-03] add permission-preserving current-tab video scan
+
+- 현재 탭 상세 감지를 구현했다. 같은 실제 Chrome 테스트에서 열린 Shadow DOM 후보 0→1, 반복 추가 0, 해당 영상 HTTP 요청 0건을 확인했다. 닫힌 Shadow DOM·blob·인증용 주소는 제외했고 활성 문서·설정 변경 경계를 검증했다. JS 47개·데스크톱 Rust 35개, Chrome 스모크와 새 포터블 ZIP 해시 검증 PASS. 화면 조작과 운영 사이트 인수는 미검증.
+
 ## 2026-11-10 — [R8-02] scope advanced detection to existing tab access
 
 - 현재 탭 최상위 문서의 열린 Shadow DOM만 팝업에서 일회 확인하는 범위를 채택했다. 기존 공개 주소 검사와 감지 설정을 적용하며 권한 확대·디버거·상시 탐색은 필요성이 없어 보류했다. 공식 메시징 계약 및 기존 확장 권한 테스트 포함 31개 PASS.

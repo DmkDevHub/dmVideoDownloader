@@ -245,3 +245,5 @@ Windows 알림의 화면 표시, 코드 서명과 SmartScreen 상호작용, 수�
 | `blob:` 주소 및 인증용 쿼리가 포함된 주소 | 후보 증가 0개. 공개 주소만 처리하는 제품 경계에 따른 제외다. |
 
 Chrome for Testing의 임시 프로필과 로컬 테스트 페이지로 재현했다. 특정 운영 사이트의 누락률은 측정하지 않았다. [Shadow DOM 접근 규칙](https://developer.mozilla.org/en-US/docs/Web/API/Element/shadowRoot)
+
+R8-03에서는 같은 페이지에서 팝업 명령 전 해당 후보 0개, 명령 후 열린 Shadow DOM의 추가 후보 1개, 반복 실행 후 추가 0개를 확인했다. 해당 영상 주소에 대한 HTTP 요청은 0건이었다. 닫힌 Shadow DOM·인증용 쿼리·blob 후보는 추가되지 않았다. 컨트롤러 테스트로 활성 문서에 대한 메시지, 팝업 발신 확인, 이동·감지 설정 변경 시 결과 폐기와 Native Host 미호출을 확인했다. 화면 클릭과 운영 사이트 인수는 미검증이다.

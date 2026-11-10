@@ -1,3 +1,5 @@
+import { contentMessage, DETAIL_SCAN_LIMIT } from './media';
+
 export function observeVideos(doc: Document, send: (source: { mediaUrl: string; mime?: string }) => void): { setEnabled: (enabled: boolean) => void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let paused = false;
@@ -31,4 +33,23 @@ export function observeVideos(doc: Document, send: (source: { mediaUrl: string; 
     clearTimeout(timer); timer = undefined;
     if (enabled) schedule();
   } };
+}
+export function scanOpenShadowVideos(doc: Document): NonNullable<ReturnType<typeof contentMessage>>[] {
+  const results = new Map<string, NonNullable<ReturnType<typeof contentMessage>>>();
+  const walkers = [doc.createTreeWalker(doc, NodeFilter.SHOW_ELEMENT)];
+  for (let visited = 0; walkers.length && visited < 5_000 && results.size < DETAIL_SCAN_LIMIT;) {
+    const walker = walkers[walkers.length - 1];
+    const element = walker.nextNode() as Element | null;
+    if (!element) { walkers.pop(); continue; }
+    visited++;
+    if (element.shadowRoot) walkers.push(doc.createTreeWalker(element.shadowRoot, NodeFilter.SHOW_ELEMENT));
+    if (walker.root === doc) continue;
+    const source = element instanceof HTMLVideoElement
+      ? { mediaUrl: element.currentSrc || element.src }
+      : element instanceof HTMLSourceElement && element.parentElement instanceof HTMLVideoElement
+        ? { mediaUrl: element.src, mime: element.type } : null;
+    const message = source && contentMessage(source);
+    if (message) results.set(message.mediaUrl, message);
+  }
+  return [...results.values()];
 }

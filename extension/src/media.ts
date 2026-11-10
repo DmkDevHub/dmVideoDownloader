@@ -1,6 +1,8 @@
 import { publicUrl } from '../../shared/publicUrl';
 export { publicUrl };
 export type SourceType = 'mp4' | 'webm' | 'hls' | 'dash' | 'unknown';
+export const DETAIL_SCAN_LIMIT = 30;
+export type DetailScanResult = { code: 'ok'; added: number } | { code: 'disabled' | 'unavailable' | 'busy' };
 export interface Candidate {
   candidateId: string;
   tabId: number;

@@ -1,4 +1,4 @@
-import { CandidateStore, domObservation, networkObservation, publicUrl } from './media';
+import { CandidateStore, DETAIL_SCAN_LIMIT, domObservation, networkObservation, publicUrl, type DetailScanResult } from './media';
 import { failure, readRuntimeSettings, sendCandidate, testConnection, type NativeResult } from './native';
 export function startBackground(api: typeof chrome): () => Promise<unknown> {
   const store = new CandidateStore();
@@ -7,6 +7,7 @@ export function startBackground(api: typeof chrome): () => Promise<unknown> {
   let cacheAvailable = true;
   const pendingSelections = new Set<string>();
   let connectionTestInFlight: Promise<NativeResult> | undefined;
+  let detailScanInFlight = false;
   let lastVerifiedAt: string | undefined;
   const readSettings = (value: unknown) => {
     autoDetect = true; settingsSource = 'default';
@@ -49,6 +50,43 @@ export function startBackground(api: typeof chrome): () => Promise<unknown> {
     }).catch(() => { cacheAvailable = false; });
     return queue;
   };
+  const activeDocument = async () => {
+    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) return;
+    const tabId = tab.id;
+    const root = await api.webNavigation.getFrame({ tabId, frameId: 0 });
+    const pageUrl = publicUrl(root?.url);
+    if (!root || root.documentLifecycle !== 'active' || !pageUrl ||
+      !store.accepts(tabId, 0, root.documentId) || store.pageUrl(tabId) !== pageUrl) return;
+    return { tabId, documentId: root.documentId, pageUrl };
+  };
+  const detailScan = async (): Promise<DetailScanResult> => {
+    await queue;
+    if (!autoDetect) return { code: 'disabled' };
+    const target = await activeDocument();
+    if (!target) return { code: 'unavailable' };
+    if (!autoDetect) return { code: 'disabled' };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reply: unknown = await Promise.race([
+      api.tabs.sendMessage(target.tabId, { type: 'SCAN_OPEN_SHADOW' }, { documentId: target.documentId }),
+      new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), 1500); }),
+    ]).finally(() => clearTimeout(timer));
+    if (!Array.isArray(reply)) return { code: 'unavailable' };
+    let result: DetailScanResult = { code: 'unavailable' };
+    await enqueue(async () => {
+      if (!autoDetect) { result = { code: 'disabled' }; return; }
+      const current = await activeDocument();
+      if (!current || current.tabId !== target.tabId || current.documentId !== target.documentId ||
+        current.pageUrl !== target.pageUrl) return;
+      const before = store.list(target.tabId).length;
+      for (const item of reply.slice(0, DETAIL_SCAN_LIMIT)) {
+        const observation = domObservation(target.tabId, item);
+        if (observation) store.add(observation);
+      }
+      result = { code: 'ok', added: store.list(target.tabId).length - before };
+    });
+    return result;
+  };
   api.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.lastRuntimeSettings) void enqueue(async () => {
       readSettings(changes.lastRuntimeSettings.newValue);
@@ -90,6 +128,15 @@ export function startBackground(api: typeof chrome): () => Promise<unknown> {
       if (!observation) return;
       const tabId = sender.tab.id, frameId = sender.frameId ?? 0, documentId = sender.documentId;
       void enqueue(() => { if (autoDetect && store.accepts(tabId, frameId, documentId)) store.add(observation); });
+    }
+    if (message?.type === 'DETAIL_SCAN' && sender.url === api.runtime.getURL('popup.html')) {
+      if (detailScanInFlight) { respond({ code: 'busy' }); return; }
+      detailScanInFlight = true;
+      void detailScan().catch(() => ({ code: 'unavailable' })).then(result => {
+        detailScanInFlight = false;
+        respond(result);
+      });
+      return true;
     }
     if (message?.type === 'CONNECTION_TEST' && sender.url === api.runtime.getURL('popup.html')) {
       if (connectionTestInFlight) { respond(failure('CONNECTION_TEST_BUSY')); return; }

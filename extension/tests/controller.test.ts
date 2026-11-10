@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { startBackground } from '../src/controller';
 import { chromeFixture, fakePort } from './helpers';
 async function setup() {
@@ -32,6 +32,48 @@ test('last confirmed off clears rows/badge and suppresses new observations witho
   expect(fixture.api.action.setBadgeText).toHaveBeenLastCalledWith({ tabId: 1, text: '' });
   expect(fixture.api.runtime.connectNative).not.toHaveBeenCalled();
   expect(fixture.api.storage.local.set).not.toHaveBeenCalled();
+  expect(await fixture.request({ type: 'DETAIL_SCAN' })).toEqual({ code: 'disabled' });
+  expect(fixture.api.tabs.sendMessage).not.toHaveBeenCalledWith(1, { type: 'SCAN_OPEN_SHADOW' }, expect.anything());
+});
+test('detail scan only accepts the popup, binds the active document, and filters candidate data', async () => {
+  const fixture = await setup();
+  fixture.events.onMessage.emit({ type: 'DETAIL_SCAN' },
+    { id: fixture.sender.id, url: 'https://example.org/watch', tab: { id: 1 } }, () => undefined);
+  expect(fixture.api.tabs.sendMessage).not.toHaveBeenCalled();
+  fixture.api.tabs.sendMessage.mockResolvedValue([
+    { mediaUrl: 'https://cdn.example.org/open.mp4' },
+    { mediaUrl: 'https://cdn.example.org/private.mp4?token=fixture' },
+    { mediaUrl: 'blob:https://example.org/mock' },
+  ]);
+  expect(await fixture.request({ type: 'DETAIL_SCAN', tabId: 7 })).toEqual({ code: 'ok', added: 1 });
+  expect(fixture.api.tabs.sendMessage).toHaveBeenCalledWith(1, { type: 'SCAN_OPEN_SHADOW' }, { documentId: 'doc-1' });
+  expect(await fixture.request({ type: 'DETAIL_SCAN' })).toEqual({ code: 'ok', added: 0 });
+  expect((await fixture.request({ type: 'POPUP_STATE' })).candidates).toHaveLength(2);
+  expect(fixture.api.runtime.connectNative).not.toHaveBeenCalled();
+});
+test('detail scan discards replies after navigation and refuses overlapping requests', async () => {
+  const fixture = await setup();
+  let complete!: (reply: unknown) => void;
+  fixture.api.tabs.sendMessage.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const scanning = fixture.request({ type: 'DETAIL_SCAN' });
+  await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+  expect(await fixture.request({ type: 'DETAIL_SCAN' })).toEqual({ code: 'busy' });
+  fixture.api.webNavigation.getFrame.mockResolvedValue({ documentId: 'doc-1', url: 'https://example.org/next', documentLifecycle: 'active' });
+  fixture.events.history.emit({ tabId: 1, frameId: 0, documentId: 'doc-1', url: 'https://example.org/next' });
+  complete([{ mediaUrl: 'https://cdn.example.org/stale.mp4' }]);
+  expect(await scanning).toEqual({ code: 'unavailable' });
+  expect((await fixture.request({ type: 'POPUP_STATE' })).candidates).toEqual([]);
+});
+test('detail scan does not commit a reply when detection was disabled during the scan', async () => {
+  const fixture = await setup();
+  let complete!: (reply: unknown) => void;
+  fixture.api.tabs.sendMessage.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const scanning = fixture.request({ type: 'DETAIL_SCAN' });
+  await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+  fixture.events.changed.emit({ lastRuntimeSettings: { newValue: { browserAutoDetect: false } } }, 'local');
+  complete([{ mediaUrl: 'https://cdn.example.org/open.mp4' }]);
+  expect(await scanning).toEqual({ code: 'disabled' });
+  expect((await fixture.request({ type: 'POPUP_STATE' })).candidates).toEqual([]);
 });
 test('previous document events and stale selections after navigation are rejected', async () => {
   const fixture = await setup(), state = await fixture.request({ type: 'POPUP_STATE' });
