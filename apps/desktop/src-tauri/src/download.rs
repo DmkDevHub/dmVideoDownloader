@@ -31,6 +31,14 @@ pub struct Progress {
     total: Option<u64>,
     bytes_per_second: Option<f64>,
     segments: Option<(usize, usize)>,
+    continuation: Option<Continuation>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum Continuation {
+    Resumed,
+    Restarted,
 }
 
 struct Saved {

@@ -1,4 +1,4 @@
-use super::{Control, Progress, TRANSFER_TIMEOUT};
+use super::{Continuation, Control, Progress, TRANSFER_TIMEOUT};
 use crate::analysis::proxy;
 use reqwest::{
     blocking::{Client, Response},
@@ -241,6 +241,7 @@ impl<'a> StreamClient<'a> {
                         total,
                         bytes_per_second: Some(downloaded as f64 / started.elapsed().as_secs_f64()),
                         segments: Some((index, parts.len())),
+                        continuation: None,
                     });
                     last_update = Instant::now();
                 }
@@ -258,6 +259,7 @@ impl<'a> StreamClient<'a> {
             total: Some(downloaded),
             bytes_per_second: None,
             segments: Some((parts.len(), parts.len())),
+            continuation: None,
         });
         Ok(())
     }
@@ -272,6 +274,7 @@ impl<'a> StreamClient<'a> {
     ) -> Result<(), &'static str> {
         crate::folders::check_path(path)?;
         crate::folders::check_path(directory)?;
+        let had_partial = saved.is_some();
         let mut offset = 0;
         if let Some(partial) = saved.as_ref() {
             crate::folders::check_path(&partial.path)?;
@@ -336,7 +339,21 @@ impl<'a> StreamClient<'a> {
             .map(|value| value.length)
             .or_else(|| response.content_length());
         let mut downloaded = offset;
-        let result = self.copy_file(response, &mut file, total, &mut downloaded, &mut update);
+        let continuation = if offset > 0 {
+            Some(Continuation::Resumed)
+        } else if had_partial {
+            Some(Continuation::Restarted)
+        } else {
+            None
+        };
+        let result = self.copy_file(
+            response,
+            &mut file,
+            total,
+            &mut downloaded,
+            continuation,
+            &mut update,
+        );
         drop(file);
         match result {
             Ok(()) => temporary
@@ -371,15 +388,17 @@ impl<'a> StreamClient<'a> {
         file: &mut File,
         total: Option<u64>,
         downloaded: &mut u64,
+        continuation: Option<Continuation>,
         update: &mut impl FnMut(Progress),
     ) -> Result<(), &'static str> {
         let offset = *downloaded;
-        if offset > 0 {
+        if continuation.is_some() {
             update(Progress {
                 downloaded: offset,
                 total,
                 bytes_per_second: None,
                 segments: None,
+                continuation,
             });
         }
         let started = Instant::now();
@@ -415,6 +434,7 @@ impl<'a> StreamClient<'a> {
                         (next - offset) as f64 / started.elapsed().as_secs_f64().max(0.001),
                     ),
                     segments: None,
+                    continuation,
                 });
                 last_update = Some(Instant::now());
             }
@@ -431,6 +451,7 @@ impl<'a> StreamClient<'a> {
             total: Some(*downloaded),
             bytes_per_second: None,
             segments: None,
+            continuation,
         });
         self.check()
     }
@@ -600,7 +621,10 @@ mod tests {
             assert_eq!(client.download_file(&url, &path, folder.path(), &mut saved, |_| {}), Err("STREAM_BODY_INCOMPLETE"));
             assert!(!path.exists());
             assert_eq!(saved.as_ref().map(|part| part.downloaded), Some(3));
-            client.download_file(&url, &path, folder.path(), &mut saved, |_| {}).unwrap();
+            let mut progress = Vec::new();
+            client.download_file(&url, &path, folder.path(), &mut saved, |value| progress.push(value)).unwrap();
+            assert_eq!(progress[0].continuation, Some(Continuation::Resumed));
+            assert_eq!(progress[0].downloaded, 3);
             assert_eq!(std::fs::read(path).unwrap(), b"abcdef");
             assert!(saved.is_none());
             assert_eq!(std::fs::read_dir(folder.path()).unwrap().count(), 1);
@@ -630,9 +654,16 @@ mod tests {
                     Err("STREAM_BODY_INCOMPLETE")
                 );
                 assert_eq!(saved.is_some(), expected_range);
+                let mut progress = Vec::new();
                 client
-                    .download_file(&url, &path, folder.path(), &mut saved, |_| {})
+                    .download_file(&url, &path, folder.path(), &mut saved, |value| {
+                        progress.push(value)
+                    })
                     .unwrap();
+                assert_eq!(
+                    progress[0].continuation,
+                    expected_range.then_some(Continuation::Restarted)
+                );
                 assert_eq!(std::fs::read(path).unwrap(), b"123456");
             });
             assert_eq!(requests[1].contains("\r\nif-range:"), expected_range);

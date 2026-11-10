@@ -6,6 +6,7 @@ export type DownloadRequest = { kind: 'direct'; address: string } | { kind: 'can
 export interface DownloadProgress {
   downloaded: number; total: number | null; bytesPerSecond: number | null;
   segments: [completed: number, total: number] | null;
+  continuation: 'resumed' | 'restarted' | null;
 }
 export type DownloadAction = 'pause' | 'resume' | 'cancel' | 'retry';
 export const downloadPhase = {
@@ -25,7 +26,18 @@ export function progressLabel(progress: DownloadProgress | null) {
     : (progress.downloaded / 1048576).toFixed(1) + ' MiB';
   const parts = progress.segments ? ' · 조각 ' + progress.segments.join('/') : '';
   const speed = progress.bytesPerSecond == null ? '' : ' · ' + (progress.bytesPerSecond / 1048576).toFixed(1) + ' MiB/s';
-  return size + parts + speed;
+  const continuation = progress.continuation === 'resumed' ? ' · 이어받는 중'
+    : progress.continuation === 'restarted' ? ' · 처음부터 다시 받는 중' : '';
+  let remaining = '';
+  if (progress.total != null && progress.bytesPerSecond != null && progress.bytesPerSecond > 0
+      && progress.downloaded < progress.total) {
+    const seconds = Math.ceil((progress.total - progress.downloaded) / progress.bytesPerSecond);
+    if (Number.isFinite(seconds)) {
+      const time = seconds < 60 ? seconds + '초' : Math.ceil(seconds / 60) + '분';
+      remaining = ' · 약 ' + time + ' 남음';
+    }
+  }
+  return size + parts + speed + remaining + continuation;
 }
 
 export function downloadError(error: unknown) {
