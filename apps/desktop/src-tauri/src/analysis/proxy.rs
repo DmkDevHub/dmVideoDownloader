@@ -281,9 +281,15 @@ fn serve(stream: TcpStream, limits: &Limits) -> io::Result<()> {
             url.host_str().unwrap_or_default()
         )?;
         for header in request.headers.iter() {
-            if ["user-agent", "accept", "accept-language", "range"]
-                .iter()
-                .any(|name| header.name.eq_ignore_ascii_case(name))
+            if [
+                "user-agent",
+                "accept",
+                "accept-language",
+                "range",
+                "if-range",
+            ]
+            .iter()
+            .any(|name| header.name.eq_ignore_ascii_case(name))
             {
                 write!(remote, "{}: ", header.name)?;
                 remote.write_all(header.value)?;

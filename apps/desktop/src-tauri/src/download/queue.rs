@@ -18,6 +18,7 @@ pub(super) struct Work {
     pub settings: Settings,
     pub page: String,
     pub media: Option<String>,
+    pub partial: Mutex<[Option<super::stream::PartialFile>; 2]>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -214,6 +215,10 @@ impl Queue {
                 job.view.phase = Phase::Cancelled;
                 job.work = None;
             }
+            (Action::Cancel, Phase::Failed, None) if job.view.can_retry => {
+                job.view.phase = Phase::Cancelled;
+                job.work = None;
+            }
             (
                 Action::Cancel,
                 Phase::Analyzing
@@ -399,6 +404,8 @@ impl Queue {
             } else if matches!(job.view.phase, Phase::Queued | Phase::Paused) {
                 job.view.phase = Phase::Cancelled;
                 job.work = None;
+            } else if job.view.phase == Phase::Failed {
+                job.work = None;
             }
         }
         (running, first)
@@ -448,6 +455,7 @@ pub fn download_video(
         settings,
         page,
         media,
+        partial: Mutex::default(),
     })?;
     queue.inner().schedule(&app);
     Ok(id)
@@ -487,6 +495,7 @@ mod tests {
             settings: Settings::defaults(String::new()),
             page: "https://example.org/video".into(),
             media: None,
+            partial: Mutex::default(),
         };
         work.settings.concurrent_downloads = 1;
         work
@@ -576,7 +585,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires verified developer binaries and public network access"]
-    fn real_paused_transfer_cleans_parts_and_resumes_as_a_new_attempt() {
+    fn real_paused_transfer_resumes_and_cleans_parts_on_completion() {
         let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
         let output = tempfile::tempdir().unwrap();
         let work = Work {
@@ -584,6 +593,7 @@ mod tests {
             settings: Settings::defaults(output.path().to_str().unwrap().into()),
             page: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4".into(),
             media: None,
+            partial: Mutex::default(),
         };
         let control = Arc::new(Control::default());
         let pause = Arc::clone(&control);
@@ -593,10 +603,28 @@ mod tests {
             }
         });
         assert_eq!(result.err(), Some("DOWNLOAD_INTERRUPTED"));
-        assert_eq!(std::fs::read_dir(output.path()).unwrap().count(), 0);
-        let finished = download(&work, &Control::default(), |_| {}).unwrap();
+        let entries: Vec<_> = std::fs::read_dir(output.path())
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0]
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".dm-part-"));
+        let offset = entries[0].metadata().unwrap().len();
+        assert!((1..1_128_375).contains(&offset));
+        let (send, receive) = std::sync::mpsc::channel();
+        let finished = download(&work, &Control::default(), move |event| {
+            if let Update::Progress(progress) = event {
+                let _ = send.send(progress.downloaded);
+            }
+        })
+        .unwrap();
+        assert_eq!(receive.try_recv(), Ok(offset));
         assert!(output.path().join(finished.filename).is_file());
-        println!("PAUSE_CLEANUP_AND_RESTART_PASS");
+        assert_eq!(std::fs::read_dir(output.path()).unwrap().count(), 1);
+        println!("PAUSE_RESUME_AND_CLEANUP_PASS");
     }
 
     #[test]

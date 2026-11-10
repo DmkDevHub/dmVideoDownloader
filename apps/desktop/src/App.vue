@@ -322,8 +322,8 @@ onMounted(async () => {
           <td>
             <span v-if="job.filename">{{ job.filename }}</span>
             <button v-if="['queued', 'analyzing', 'downloading', 'retrying'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'pause')">일시정지</button>
-            <button v-if="job.phase === 'paused'" type="button" @click="changeDownload(job.id, 'resume')">처음부터 재개</button>
-            <button v-if="['queued', 'analyzing', 'downloading', 'merging', 'retrying', 'pausing', 'paused'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'cancel')">취소</button>
+            <button v-if="job.phase === 'paused'" type="button" @click="changeDownload(job.id, 'resume')">재개</button>
+            <button v-if="job.canRetry || ['queued', 'analyzing', 'downloading', 'merging', 'retrying', 'pausing', 'paused'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'cancel')">취소</button>
             <button v-if="job.canRetry" type="button" @click="changeDownload(job.id, 'retry')">다시 시도</button>
           </td>
         </tr>

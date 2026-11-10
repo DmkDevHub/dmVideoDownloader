@@ -1,4 +1,4 @@
-use crate::analysis::{extract, failure, process, proxy, tools};
+use crate::analysis::{extract, process, proxy, tools};
 use crate::{
     folders,
     settings::{Filename, Format as Container, Quality},
@@ -31,27 +31,6 @@ pub struct Progress {
     total: Option<u64>,
     bytes_per_second: Option<f64>,
     segments: Option<(usize, usize)>,
-}
-
-fn progress(line: &[u8]) -> Option<Progress> {
-    let text = std::str::from_utf8(line).ok()?.trim();
-    let mut fields = text.strip_prefix("DM_PROGRESS ")?.split_whitespace();
-    let downloaded = fields.next()?.parse().ok()?;
-    let exact = fields.next()?.parse().ok();
-    let estimate = fields.next()?.parse().ok();
-    let bytes_per_second = fields
-        .next()?
-        .parse::<f64>()
-        .ok()
-        .filter(|speed| speed.is_finite() && *speed >= 0.0);
-    Some(Progress {
-        downloaded,
-        total: exact
-            .or(estimate)
-            .filter(|total| *total >= downloaded && *total > 0),
-        bytes_per_second,
-        segments: None,
-    })
 }
 
 struct Saved {
@@ -164,6 +143,10 @@ fn download(
         .prefix(".dm-video-")
         .tempdir_in(&directory)
         .map_err(|_| "DIRECTORY_NOT_WRITABLE")?;
+    let mut partial = work.partial.lock().map_err(|_| "DOWNLOAD_FAILED")?;
+    if audio.is_none() {
+        partial[1].take();
+    }
     let video = staging.path().join(format!("source.{ext}"));
     let update = Arc::new(update);
     update(Update::Downloading {
@@ -172,10 +155,11 @@ fn download(
     });
     let video_update = Arc::clone(&update);
     let video_demux = transfer(
-        &analyzer,
         streams.as_ref(),
         format,
         &video,
+        &directory,
+        &mut partial[0],
         control,
         move |value| video_update(Update::Progress(value)),
     )?;
@@ -188,10 +172,11 @@ fn download(
             let file = staging.path().join(format!("audio.{ext}"));
             let audio_update = Arc::clone(&update);
             let demux = transfer(
-                &analyzer,
                 streams.as_ref(),
                 audio,
                 &file,
+                &directory,
+                &mut partial[1],
                 control,
                 move |value| audio_update(Update::Progress(value)),
             )?;
@@ -460,16 +445,18 @@ fn choose_video<'a>(
 }
 
 fn transfer(
-    analyzer: &extract::Analyzer,
     streams: Option<&stream::StreamClient<'_>>,
     format: &extract::Format,
     path: &Path,
+    directory: &Path,
+    partial: &mut Option<stream::PartialFile>,
     control: &Control,
-    mut update: impl FnMut(Progress) + Send + 'static,
+    update: impl FnMut(Progress) + Send + 'static,
 ) -> Result<Demux, &'static str> {
     folders::check_path(path)?;
     let media = format.media.as_ref().ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
     if media.is_hls() {
+        partial.take();
         let streams = streams.ok_or("DOWNLOAD_FAILED")?;
         let (base, text) = streams.playlist(&media.url)?;
         let (parts, demux) = hls::plan(&base, &text)?;
@@ -477,6 +464,7 @@ fn transfer(
         return Ok(demux);
     }
     if media.is_dash() {
+        partial.take();
         let demux = match format.container.as_deref() {
             Some("mp4" | "m4a") => Demux::Mov,
             Some("webm") => Demux::Matroska,
@@ -495,62 +483,8 @@ fn transfer(
             .transfer(&parts, path, update)?;
         return Ok(demux);
     }
-    let proxy = proxy::Proxy::download(TRANSFER_TIMEOUT).map_err(|_| "NETWORK_ERROR")?;
-    // Construct a new info object. Never pass through extractor metadata, headers, or file paths.
-    let input = serde_json::to_vec(&serde_json::json!({
-        "id": "public-video",
-        "title": "Public video",
-        "url": media.url.as_str(),
-        "protocol": media.protocol,
-        "ext": format.container,
-        "acodec": format.audio_codec,
-        "format_id": "approved",
-        "vcodec": if format.tracks == extract::Tracks::AudioOnly { Some("none") } else { format.video_codec.as_deref() },
-    }))
-    .map_err(|_| "DOWNLOAD_FAILED")?;
-    let mut command = analyzer.command(&proxy);
-    let template = path.to_str().ok_or("INVALID_DIRECTORY")?.replace('%', "%%");
-    command.args([
-        "--load-info-json", "-", "--format", "approved", "--downloader", "native", "--fixup", "never",
-        "--no-mtime", "--newline", "--progress", "--progress-delta", "0.25",
-        "--progress-template", "download:DM_PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s",
-        "--output", &template,
-    ]);
-    let output = process::run_with(
-        &mut command,
-        TRANSFER_TIMEOUT,
-        (512 * 1024, 64 * 1024),
-        Some(input),
-        move |line| {
-            if let Some(value) = progress(line) {
-                update(value);
-            }
-        },
-        || control.interrupted() || proxy.limited(),
-    );
-    if proxy.blocked() {
-        return Err("URL_NOT_ALLOWED");
-    }
-    if proxy.limited() {
-        return Err("DOWNLOAD_LIMIT");
-    }
-    let output = output.map_err(|error| match error {
-        process::RunError::Interrupted => "DOWNLOAD_INTERRUPTED",
-        process::RunError::Timeout => "DOWNLOAD_TIMEOUT",
-        _ => "DOWNLOAD_FAILED",
-    })?;
-    if !output.success {
-        let reason = failure::classify(&output.stderr);
-        return Err(match reason {
-            "ANALYSIS_FAILED" => "DOWNLOAD_FAILED",
-            "ANALYSIS_TIMEOUT" => "DOWNLOAD_TIMEOUT",
-            reason => reason,
-        });
-    }
-    folders::check_path(path)?;
-    if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0) {
-        return Err("DOWNLOAD_FAILED");
-    }
+    stream::StreamClient::new(control)?
+        .download_file(&media.url, path, directory, partial, update)?;
     match format.container.as_deref() {
         Some("mp4" | "m4a") => Ok(Demux::Mov),
         Some("webm") => Ok(Demux::Matroska),
@@ -699,18 +633,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_numeric_progress_without_disclosing_raw_output() {
-        let value = progress(b"DM_PROGRESS 128 256 NA 2000.0\n").unwrap();
-        assert_eq!(value.downloaded, 128);
-        assert_eq!(value.total, Some(256));
-        assert_eq!(value.bytes_per_second, Some(2000.0));
-        assert!(progress(b"ERROR: https://example.org/?token=value").is_none());
-        let unknown = progress(b"DM_PROGRESS 300 NA 256 NaN\n").unwrap();
-        assert_eq!(unknown.total, None);
-        assert_eq!(unknown.bytes_per_second, None);
-    }
-
-    #[test]
     #[ignore = "requires verified developer binaries and public network access"]
     fn real_public_mp4_download_and_decode() {
         let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
@@ -735,6 +657,7 @@ mod tests {
                 page: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
                     .into(),
                 media: None,
+                partial: std::sync::Mutex::default(),
             },
             &Control::default(),
             move |value| {
@@ -769,6 +692,7 @@ mod tests {
                 settings,
                 page: "https://storage.googleapis.com/shaka-demo-assets/sintel/dash.mpd".into(),
                 media: None,
+                partial: std::sync::Mutex::default(),
             },
             &Control::default(),
             |_| {},
@@ -795,6 +719,7 @@ mod tests {
                 page: "https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8"
                     .into(),
                 media: None,
+                partial: std::sync::Mutex::default(),
             },
             &Control::default(),
             move |event| {
@@ -828,6 +753,7 @@ mod tests {
                 settings,
                 page: "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd".into(),
                 media: None,
+                partial: std::sync::Mutex::default(),
             },
             &Control::default(),
             move |event| {

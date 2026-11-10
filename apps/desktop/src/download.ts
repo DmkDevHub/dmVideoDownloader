@@ -42,7 +42,7 @@ export function downloadError(error: unknown) {
     case 'STREAM_RESPONSE_INVALID': return '영상 서버가 올바른 재생목록 또는 조각을 반환하지 않았습니다.';
     case 'STREAM_SEGMENT_MISSING': return '영상 조각을 서버에서 찾을 수 없습니다. 원래 페이지에서 다시 분석하세요.';
     case 'STREAM_SEGMENT_EMPTY': return '서버에서 빈 영상 조각을 반환했습니다.';
-    case 'STREAM_BODY_INCOMPLETE': return '영상 조각 전송이 끝나기 전에 연결이 끊겼습니다.';
+    case 'STREAM_BODY_INCOMPLETE': return '영상 전송이 끝나기 전에 연결이 끊겼습니다.';
     case 'STREAM_RANGE_INVALID': return '영상 서버가 요청한 바이트 범위를 반환하지 않았습니다.';
     case 'STREAM_REDIRECT_LIMIT': return '영상 서버의 주소 이동 횟수가 한도를 초과했습니다.';
     case 'MEDIA_INVALID': return '받은 영상 또는 음성 파일을 읽을 수 없습니다.';

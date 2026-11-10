@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-10 — [R9-01] resume interrupted public file downloads
+
+- 앱 실행 중 공개 MP4·WebM 및 독립 DASH 파일의 이어받기를 추가했다. 동일한 파일과 정확한 범위 응답을 확인한 뒤 이어 쓰며, 확인할 수 없으면 처음부터 받는다. 로컬 연결 중단·응답 변경 재현, 실제 MP4 일시정지·재개와 디코딩, 자동 테스트 87개 및 MP4·HLS 스모크 검증 PASS. 포터블 ZIP 및 내부 파일 15개의 SHA-256 일치 확인.
+
 ## 2026-11-10 — [R8-03] add permission-preserving current-tab video scan
 
 - 현재 탭 상세 감지를 구현했다. 같은 실제 Chrome 테스트에서 열린 Shadow DOM 후보 0→1, 반복 추가 0, 해당 영상 HTTP 요청 0건을 확인했다. 닫힌 Shadow DOM·blob·인증용 주소는 제외했고 활성 문서·설정 변경 경계를 검증했다. JS 47개·데스크톱 Rust 35개, Chrome 스모크와 새 포터블 ZIP 해시 검증 PASS. 화면 조작과 운영 사이트 인수는 미검증.
