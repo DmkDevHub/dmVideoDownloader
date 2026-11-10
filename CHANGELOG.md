@@ -2,6 +2,10 @@
 
 모든 개발 변경은 ROADMAP의 **세부 작업 1개 완료 단위**로 기록한다. 명세 작성과 실제 구현을 구분한다.
 
+## 2026-11-10 — [R8-02] scope advanced detection to existing tab access
+
+- 현재 탭 최상위 문서의 열린 Shadow DOM만 팝업에서 일회 확인하는 범위를 채택했다. 기존 공개 주소 검사와 감지 설정을 적용하며 권한 확대·디버거·상시 탐색은 필요성이 없어 보류했다. 공식 메시징 계약 및 기존 확장 권한 테스트 포함 31개 PASS.
+
 ## 2026-11-10 — [R8-01] reproduce shadow player detection gaps
 
 - Chrome for Testing에서 네트워크 요청을 내지 않는 중첩 열린 Shadow DOM 영상이 자동 후보에 나타나지 않는 것을 재현했다. 닫힌 Shadow DOM, blob, 인증성 쿼리도 구분해 TEST_PLAN에 기록했다. 공개 MP4 재생과 확장 스모크 PASS.
