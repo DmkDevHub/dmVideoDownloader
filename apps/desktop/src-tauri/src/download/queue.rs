@@ -21,12 +21,23 @@ pub(super) struct Work {
     pub partial: Mutex<[super::stream::TrackPartial; 2]>,
 }
 
+impl Work {
+    pub(super) fn preserve_for_restart(&self) {
+        if let Ok(mut partial) = self.partial.lock() {
+            if let Some(file) = partial[0].file.take() {
+                file.keep_for_restart();
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum Signal {
     #[default]
     Run,
     Pause,
     Cancel,
+    Exit,
     Committed,
 }
 
@@ -45,7 +56,10 @@ struct Bandwidth {
 
 impl Control {
     pub fn interrupted(&self) -> bool {
-        matches!(*self.signal.lock().unwrap(), Signal::Pause | Signal::Cancel)
+        matches!(
+            *self.signal.lock().unwrap(),
+            Signal::Pause | Signal::Cancel | Signal::Exit
+        )
     }
     pub fn check(&self) -> Result<(), &'static str> {
         if self.interrupted() {
@@ -56,7 +70,9 @@ impl Control {
     }
     fn interrupt(&self, signal: Signal) -> Result<(), &'static str> {
         let mut current = self.signal.lock().unwrap();
-        if *current != Signal::Run && !(*current == Signal::Pause && signal == Signal::Cancel) {
+        if *current != Signal::Run
+            && !(*current == Signal::Pause && matches!(signal, Signal::Cancel | Signal::Exit))
+        {
             return Err("DOWNLOAD_ACTION_UNAVAILABLE");
         }
         *current = signal;
@@ -412,7 +428,10 @@ impl Queue {
         let Some(job) = jobs.entries.iter_mut().find(|job| job.view.id == id) else {
             return None;
         };
-        job.control = None;
+        let exiting = job
+            .control
+            .take()
+            .is_some_and(|control| *control.signal.lock().unwrap() == Signal::Exit);
         job.view.progress = None;
         job.view.error = None;
         let mut notification = None;
@@ -433,6 +452,11 @@ impl Queue {
             }
             (Phase::Pausing, Err(_)) => Phase::Paused,
             (Phase::Cancelling, Err(_)) => {
+                if exiting {
+                    if let Some(work) = &job.work {
+                        work.preserve_for_restart();
+                    }
+                }
                 job.work = None;
                 Phase::Cancelled
             }
@@ -456,14 +480,19 @@ impl Queue {
         for job in &mut jobs.entries {
             if let Some(control) = &job.control {
                 running = true;
-                if control.interrupt(Signal::Cancel).is_ok() {
+                if control.interrupt(Signal::Exit).is_ok() {
                     job.view.phase = Phase::Cancelling;
                 }
-            } else if matches!(job.view.phase, Phase::Queued | Phase::Paused) {
-                job.view.phase = Phase::Cancelled;
-                job.work = None;
-            } else if job.view.phase == Phase::Failed {
-                job.work = None;
+            } else if matches!(
+                job.view.phase,
+                Phase::Queued | Phase::Paused | Phase::Failed
+            ) {
+                if let Some(work) = job.work.take() {
+                    work.preserve_for_restart();
+                }
+                if job.view.phase != Phase::Failed {
+                    job.view.phase = Phase::Cancelled;
+                }
             }
         }
         (running, first)

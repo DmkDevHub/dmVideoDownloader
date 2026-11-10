@@ -173,6 +173,7 @@ fn download(
         &directory,
         &mut partial[0],
         dash_hash,
+        audio.is_none(),
         control,
         move |value| video_update(Update::Progress(value)),
     )?;
@@ -191,6 +192,7 @@ fn download(
                 &directory,
                 &mut partial[1],
                 dash_hash,
+                false,
                 control,
                 move |value| audio_update(Update::Progress(value)),
             )
@@ -465,6 +467,7 @@ fn transfer(
     directory: &Path,
     partial: &mut stream::TrackPartial,
     dash_hash: Option<[u8; 32]>,
+    keep_on_exit: bool,
     control: &Control,
     update: impl FnMut(Progress) + Send + 'static,
 ) -> Result<(PathBuf, Demux), &'static str> {
@@ -519,6 +522,7 @@ fn transfer(
         path,
         directory,
         &mut partial.file,
+        keep_on_exit,
         update,
     )?;
     match format.container.as_deref() {

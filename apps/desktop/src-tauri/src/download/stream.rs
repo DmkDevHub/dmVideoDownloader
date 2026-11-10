@@ -8,6 +8,7 @@ use reqwest::{
     },
     redirect::Policy,
 };
+use sha2::{Digest, Sha256};
 use std::{
     cell::Cell,
     fs::{self, File},
@@ -17,6 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+
+mod checkpoint;
 
 pub(super) use proxy::MAX_MEDIA_SEGMENTS as MAX_PARTS;
 const MAX_PLAYLIST: usize = 1024 * 1024;
@@ -54,6 +57,14 @@ pub(super) struct PartialFile {
     path: tempfile::TempPath,
     identity: FileIdentity,
     downloaded: u64,
+    digest: Sha256,
+    keep_on_exit: bool,
+}
+
+struct FileProgress {
+    downloaded: u64,
+    digest: Sha256,
+    continuation: Option<Continuation>,
 }
 
 struct FileIdentity {
@@ -61,6 +72,17 @@ struct FileIdentity {
     destination: Url,
     etag: HeaderValue,
     length: u64,
+}
+
+impl FileIdentity {
+    fn from_response(source: &Url, response: &Response) -> Option<Self> {
+        Some(Self {
+            source: source.clone(),
+            destination: response.url().clone(),
+            etag: strong_etag(response)?.clone(),
+            length: response.content_length()?,
+        })
+    }
 }
 
 enum RangeRequest<'a> {
@@ -370,16 +392,31 @@ impl<'a> StreamClient<'a> {
         path: &Path,
         directory: &Path,
         saved: &mut Option<PartialFile>,
+        keep_on_exit: bool,
         mut update: impl FnMut(Progress),
     ) -> Result<(), &'static str> {
         crate::folders::check_path(path)?;
         crate::folders::check_path(directory)?;
-        let had_partial = saved.is_some();
+        let pending = if keep_on_exit && saved.is_none() {
+            checkpoint::Pending::find(directory, url)
+        } else {
+            None
+        };
+        let had_partial = saved.is_some() || pending.is_some();
+        let mut full_response = None;
+        if let Some(pending) = pending {
+            let response = self.get(url.clone(), None)?;
+            *saved = pending.claim(FileIdentity::from_response(url, &response));
+            if saved.is_none() {
+                full_response = Some(response);
+            }
+        }
         let mut offset = 0;
         if let Some(partial) = saved.as_ref() {
             crate::folders::check_path(&partial.path)?;
             offset = partial.downloaded;
             if partial.identity.source != *url
+                || partial.keep_on_exit != keep_on_exit
                 || !std::fs::metadata(&partial.path).is_ok_and(|metadata| metadata.len() == offset)
             {
                 saved.take();
@@ -390,13 +427,14 @@ impl<'a> StreamClient<'a> {
             identity: &partial.identity,
             offset,
         });
-        let response = match self.get(url.clone(), requested_range) {
-            Err("STREAM_RANGE_INVALID") if saved.is_some() => {
-                saved.take();
-                self.get(url.clone(), None)?
-            }
-            result => result?,
-        };
+        let response =
+            match full_response.map_or_else(|| self.get(url.clone(), requested_range), Ok) {
+                Err("STREAM_RANGE_INVALID") if saved.is_some() => {
+                    saved.take();
+                    self.get(url.clone(), None)?
+                }
+                result => result?,
+            };
         if response
             .headers()
             .get(CONTENT_ENCODING)
@@ -405,7 +443,7 @@ impl<'a> StreamClient<'a> {
             saved.take();
             return Err("STREAM_RESPONSE_INVALID");
         }
-        let (mut file, temporary, identity) = if response.status().as_u16() == 206 {
+        let (mut file, temporary, identity, digest) = if response.status().as_u16() == 206 {
             let partial = saved.take().ok_or("STREAM_RANGE_INVALID")?;
             let file = File::options()
                 .append(true)
@@ -414,7 +452,7 @@ impl<'a> StreamClient<'a> {
             if file.metadata().map_err(|_| "DOWNLOAD_SAVE_FAILED")?.len() != offset {
                 return Err("DOWNLOAD_SAVE_FAILED");
             }
-            (file, partial.path, Some(partial.identity))
+            (file, partial.path, Some(partial.identity), partial.digest)
         } else {
             saved.take();
             offset = 0;
@@ -423,22 +461,13 @@ impl<'a> StreamClient<'a> {
                 .tempfile_in(directory)
                 .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
             let (file, path) = temporary.into_parts();
-            let identity = strong_etag(&response)
-                .cloned()
-                .zip(response.content_length())
-                .map(|(etag, length)| FileIdentity {
-                    source: url.clone(),
-                    destination: response.url().clone(),
-                    etag,
-                    length,
-                });
-            (file, path, identity)
+            let identity = FileIdentity::from_response(url, &response);
+            (file, path, identity, Sha256::new())
         };
         let total = identity
             .as_ref()
             .map(|value| value.length)
             .or_else(|| response.content_length());
-        let mut downloaded = offset;
         let continuation = if offset > 0 {
             Some(Continuation::Resumed)
         } else if had_partial {
@@ -446,12 +475,17 @@ impl<'a> StreamClient<'a> {
         } else {
             None
         };
+        let mut progress = FileProgress {
+            downloaded: offset,
+            digest,
+            continuation,
+        };
         let result = self.copy_file(
             response,
             &mut file,
             total,
-            &mut downloaded,
-            continuation,
+            &mut progress,
+            keep_on_exit,
             &mut update,
         );
         drop(file);
@@ -467,13 +501,15 @@ impl<'a> StreamClient<'a> {
                         | "DOWNLOAD_TIMEOUT"
                         | "DOWNLOAD_INTERRUPTED"
                 ) {
-                    if let Some(identity) =
-                        identity.filter(|identity| downloaded > 0 && downloaded < identity.length)
-                    {
+                    if let Some(identity) = identity.filter(|identity| {
+                        progress.downloaded > 0 && progress.downloaded < identity.length
+                    }) {
                         *saved = Some(PartialFile {
                             path: temporary,
                             identity,
-                            downloaded,
+                            downloaded: progress.downloaded,
+                            digest: progress.digest,
+                            keep_on_exit,
                         });
                     }
                 }
@@ -487,11 +523,12 @@ impl<'a> StreamClient<'a> {
         mut response: Response,
         file: &mut File,
         total: Option<u64>,
-        downloaded: &mut u64,
-        continuation: Option<Continuation>,
+        progress: &mut FileProgress,
+        keep_on_exit: bool,
         update: &mut impl FnMut(Progress),
     ) -> Result<(), &'static str> {
-        let offset = *downloaded;
+        let offset = progress.downloaded;
+        let continuation = progress.continuation;
         if continuation.is_some() {
             update(Progress {
                 downloaded: offset,
@@ -509,7 +546,7 @@ impl<'a> StreamClient<'a> {
             let read = response.read(&mut buffer);
             self.check()?;
             let n = read.map_err(|_| {
-                if total.is_some_and(|size| *downloaded < size) {
+                if total.is_some_and(|size| progress.downloaded < size) {
                     "STREAM_BODY_INCOMPLETE"
                 } else {
                     "NETWORK_ERROR"
@@ -518,14 +555,17 @@ impl<'a> StreamClient<'a> {
             if n == 0 {
                 break;
             }
-            let next = *downloaded + n as u64;
+            let next = progress.downloaded + n as u64;
             if total.is_some_and(|size| next > size) {
                 return Err("STREAM_RESPONSE_INVALID");
             }
             self.charge_payload(n)?;
             file.write_all(&buffer[..n])
                 .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
-            *downloaded = next;
+            if keep_on_exit {
+                progress.digest.update(&buffer[..n]);
+            }
+            progress.downloaded = next;
             if last_update.is_none_or(|last: Instant| last.elapsed() >= Duration::from_millis(250))
             {
                 update(Progress {
@@ -540,16 +580,16 @@ impl<'a> StreamClient<'a> {
                 last_update = Some(Instant::now());
             }
         }
-        if total.is_some_and(|size| *downloaded != size) {
+        if total.is_some_and(|size| progress.downloaded != size) {
             return Err("STREAM_BODY_INCOMPLETE");
         }
-        if *downloaded == 0 {
+        if progress.downloaded == 0 {
             return Err("DOWNLOAD_FAILED");
         }
         file.flush().map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
         update(Progress {
-            downloaded: *downloaded,
-            total: Some(*downloaded),
+            downloaded: progress.downloaded,
+            total: Some(progress.downloaded),
             bytes_per_second: None,
             segments: None,
             continuation,
@@ -618,8 +658,16 @@ mod tests {
         responses: Vec<impl AsRef<[u8]> + Send + 'static>,
         run: impl FnOnce(&StreamClient<'_>, Url),
     ) -> Vec<String> {
+        fixture_with_address(responses, |client, url, _| run(client, url))
+    }
+
+    fn fixture_with_address(
+        responses: Vec<impl AsRef<[u8]> + Send + 'static>,
+        run: impl FnOnce(&StreamClient<'_>, Url, std::net::SocketAddr),
+    ) -> Vec<String> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let proxy = proxy::Proxy::with_test_fixture(listener.local_addr().unwrap()).unwrap();
+        let address = listener.local_addr().unwrap();
+        let proxy = proxy::Proxy::with_test_fixture(address).unwrap();
         listener.set_nonblocking(true).unwrap();
         let server = thread::spawn(move || {
             let mut requests = Vec::new();
@@ -661,6 +709,7 @@ mod tests {
         run(
             &client,
             Url::parse("http://fixture.example.org/asset").unwrap(),
+            address,
         );
         server.join().unwrap()
     }
@@ -720,11 +769,11 @@ mod tests {
             let folder = tempfile::tempdir().unwrap();
             let path = folder.path().join("video.mp4");
             let mut saved = None;
-            assert_eq!(client.download_file(&url, &path, folder.path(), &mut saved, |_| {}), Err("STREAM_BODY_INCOMPLETE"));
+            assert_eq!(client.download_file(&url, &path, folder.path(), &mut saved, false, |_| {}), Err("STREAM_BODY_INCOMPLETE"));
             assert!(!path.exists());
             assert_eq!(saved.as_ref().map(|part| part.downloaded), Some(3));
             let mut progress = Vec::new();
-            client.download_file(&url, &path, folder.path(), &mut saved, |value| progress.push(value)).unwrap();
+            client.download_file(&url, &path, folder.path(), &mut saved, false, |value| progress.push(value)).unwrap();
             assert_eq!(progress[0].continuation, Some(Continuation::Resumed));
             assert_eq!(progress[0].downloaded, 3);
             assert_eq!(std::fs::read(path).unwrap(), b"abcdef");
@@ -752,13 +801,13 @@ mod tests {
                 let path = folder.path().join("video.mp4");
                 let mut saved = None;
                 assert_eq!(
-                    client.download_file(&url, &path, folder.path(), &mut saved, |_| {}),
+                    client.download_file(&url, &path, folder.path(), &mut saved, false, |_| {}),
                     Err("STREAM_BODY_INCOMPLETE")
                 );
                 assert_eq!(saved.is_some(), expected_range);
                 let mut progress = Vec::new();
                 client
-                    .download_file(&url, &path, folder.path(), &mut saved, |value| {
+                    .download_file(&url, &path, folder.path(), &mut saved, false, |value| {
                         progress.push(value)
                     })
                     .unwrap();
@@ -786,8 +835,8 @@ mod tests {
             let folder = tempfile::tempdir().unwrap();
             let path = folder.path().join("video.mp4");
             let mut saved = None;
-            assert_eq!(client.download_file(&url, &path, folder.path(), &mut saved, |_| {}), Err("STREAM_BODY_INCOMPLETE"));
-            client.download_file(&url, &path, folder.path(), &mut saved, |_| {}).unwrap();
+            assert_eq!(client.download_file(&url, &path, folder.path(), &mut saved, false, |_| {}), Err("STREAM_BODY_INCOMPLETE"));
+            client.download_file(&url, &path, folder.path(), &mut saved, false, |_| {}).unwrap();
             assert_eq!(std::fs::read(path).unwrap(), b"123456");
         });
         assert!(requests[3].starts_with("get /replacement "));
@@ -802,6 +851,117 @@ mod tests {
             format: "fixture".into(),
             playlist_hash: [0; 32],
             parts,
+        }
+    }
+
+    #[test]
+    fn restart_checkpoint_can_be_used_from_another_process() {
+        use std::{env, process::Command, sync::Mutex};
+        const FIXTURE: &str = "DM_RESUME_TEST_FIXTURE";
+        const ROOT: &str = "DM_RESUME_TEST_DIR";
+        const MODE: &str = "DM_RESUME_TEST_MODE";
+        if let Ok(address) = env::var(FIXTURE) {
+            let directory = PathBuf::from(env::var_os(ROOT).unwrap());
+            let mode = env::var(MODE).unwrap();
+            let control = Control::default();
+            let proxy = proxy::Proxy::with_test_fixture(address.parse().unwrap()).unwrap();
+            let client = StreamClient::with_proxy(&control, proxy).unwrap();
+            let url = Url::parse("http://fixture.example.org/asset").unwrap();
+            let path = directory.join("video.mp4");
+            let mut progress = Vec::new();
+            client
+                .download_file(&url, &path, &directory, &mut None, true, |value| {
+                    progress.push(value)
+                })
+                .unwrap();
+            let (expected, continuation) = if mode == "same" {
+                (b"abcdef", Continuation::Resumed)
+            } else if mode == "changed" {
+                (b"123456", Continuation::Restarted)
+            } else {
+                (b"abcdef", Continuation::Restarted)
+            };
+            assert_eq!(progress[0].continuation, Some(continuation));
+            assert_eq!(fs::read(path).unwrap(), expected);
+            assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+            return;
+        }
+
+        let cut = "HTTP/1.1 200 OK\r\nETag: \"original-tag\"\r\nContent-Length: 6\r\nConnection: close\r\n\r\nabc";
+        let same = "HTTP/1.1 200 OK\r\nETag: \"original-tag\"\r\nContent-Length: 6\r\nConnection: close\r\n\r\nabcdef";
+        let resumed = "HTTP/1.1 206 Partial Content\r\nETag: \"original-tag\"\r\nContent-Range: bytes 3-5/6\r\nContent-Length: 3\r\nConnection: close\r\n\r\ndef";
+        let changed = "HTTP/1.1 200 OK\r\nETag: \"changed\"\r\nContent-Length: 6\r\nConnection: close\r\n\r\n123456";
+        for (mode, responses) in [
+            ("same", vec![cut, same, resumed]),
+            ("changed", vec![cut, changed]),
+            ("corrupt", vec![cut, same]),
+        ] {
+            let requests = fixture_with_address(responses, |client, url, address| {
+                let folder = tempfile::tempdir().unwrap();
+                let mut partial = None;
+                let path = folder.path().join("video.mp4");
+                assert_eq!(
+                    client.download_file(&url, &path, folder.path(), &mut partial, true, |_| {}),
+                    Err("STREAM_BODY_INCOMPLETE")
+                );
+                let work = super::super::Work {
+                    root: PathBuf::new(),
+                    settings: crate::settings::Settings::defaults(
+                        folder.path().to_str().unwrap().into(),
+                    ),
+                    page: url.to_string(),
+                    media: None,
+                    partial: Mutex::new([
+                        TrackPartial {
+                            file: partial,
+                            segments: None,
+                        },
+                        TrackPartial::default(),
+                    ]),
+                };
+                work.preserve_for_restart();
+                drop(work);
+                let saved = fs::read_dir(folder.path())
+                    .unwrap()
+                    .next()
+                    .unwrap()
+                    .unwrap()
+                    .path();
+                assert!(saved
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".dm-resume-"));
+                assert!(
+                    checkpoint::Pending::find(folder.path(), &url.join("/another").unwrap())
+                        .is_none()
+                );
+                let bytes = fs::read(&saved).unwrap();
+                for value in [url.as_str().as_bytes(), b"original-tag"] {
+                    assert!(!bytes.windows(value.len()).any(|window| window == value));
+                }
+                if mode == "corrupt" {
+                    let mut bytes = bytes;
+                    bytes[0] ^= 1;
+                    fs::write(saved, bytes).unwrap();
+                }
+                let result = Command::new(env::current_exe().unwrap())
+                    .args(["--exact", "download::stream::tests::restart_checkpoint_can_be_used_from_another_process", "--nocapture"])
+                    .env(FIXTURE, address.to_string())
+                    .env(ROOT, folder.path())
+                    .env(MODE, mode)
+                    .output().unwrap();
+                assert!(
+                    result.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&[result.stdout, result.stderr].concat())
+                );
+            });
+            assert!(!requests[1].contains("\r\nrange:"));
+            if mode == "same" {
+                assert!(requests[2].contains("\r\nrange: bytes=3-5"));
+                assert!(requests[2].contains("\r\nif-range: \"original-tag\""));
+            }
         }
     }
 
