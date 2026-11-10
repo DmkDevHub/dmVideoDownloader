@@ -5,6 +5,8 @@
 - 개발 지향: **Chrome 영상 감지 → 사용자의 다운로드 선택 → Windows 포터블 앱에서 최고 화질 저장**
 - 상태 **R0~R6 영상 분석·다운로드 구현**. Windows 앱에서 직접 입력한 공개 주소와 Chrome 후보를 분석하고, 지원하는 공개 MP4·WebM·HLS·DASH를 지정한 폴더에 저장한다.
 
+처음 설치하거나 사용한다면 [dmVideoDownloader 설치 및 사용 매뉴얼](docs/USER_MANUAL.md)을 참고하세요.
+
 ## 공개 영상 분석
 
 실행 파일 옆 `tools` 폴더에 Windows용 `yt-dlp.exe`와 `ffmpeg.exe`를 두고, 설정의 미디어 도구 검사에서 실행 상태와 버전을 확인한다. 메인 화면에 공개 HTTP/HTTPS 주소를 입력하거나 Chrome에서 받은 후보의 **분석**을 누른다. 포맷 표에는 해상도, 컨테이너, 영상·음성 코덱과 트랙 구성이 표시된다. 지원 주소와 오류 분류는 [다운로드 엔진](docs/DOWNLOAD_ENGINE.md)을 참조한다.
@@ -43,6 +45,7 @@
 | `CODEX_START.md` | 첫 실행 시 전달할 지시문 |
 | `ROADMAP.md` | 유일한 작업 순서/상태 관리 문서; 작은 체크박스 단위 |
 | `CHANGELOG.md` | 실제로 완료한 작업 단위의 변경 기록 |
+| `docs/USER_MANUAL.md` | Windows 포터블 설치, Chrome 연결, 다운로드 및 문제 해결 |
 | `docs/PRD.md` | 제품 목표, 기능 요구사항, 제외 범위 및 인수 기준 |
 | `docs/ARCHITECTURE.md` | 실행 프로세스, 전체 흐름, 폴더 구조, 기술 선택 |
 | `docs/BROWSER_EXTENSION.md` | unpacked 설치 안내, MV3 자동 감지, 확장 ID, 팝업·배지 |
