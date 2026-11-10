@@ -235,3 +235,13 @@ Windows x64에서 압축 해제한 릴리스 앱과 Native Host를 사용했다.
 | TC-20 | 부분 확인. 누락·미등록·낡은 뷰·복구와 해제, 실제 접근 거부에 대한 ID·정책 안내 확인. Chrome 정책 레지스트리 전후 값 일치 | 실제 조직 정책 차단 및 별도 계정의 등록 쓰기 거부 |
 
 Windows 알림의 화면 표시, 코드 서명과 SmartScreen 상호작용, 수동 Chrome 설치·재생의 시각적 인수는 미검증이다.
+
+## 15. R8 고급 감지 검증 (2026-11-10)
+
+| 재현 사례 | 기존 동작과 원인 |
+|---|---|
+| 중첩된 열린 Shadow DOM의 공개 MP4 `video/source`, `preload=none` | 실제 Chrome 테스트에서 후보 증가 0개, 해당 영상 요청 0건. 문서 범위의 `querySelectorAll('video')`는 Shadow DOM 경계를 넘지 않아 네트워크 관찰과 DOM 관찰 양쪽에서 놓친다. |
+| 닫힌 Shadow DOM의 같은 구조 | 후보 증가 0개. 브라우저의 공개 `shadowRoot` 접근으로는 내부를 읽을 수 없다. |
+| `blob:` 주소 및 인증용 쿼리가 포함된 주소 | 후보 증가 0개. 공개 주소만 처리하는 제품 경계에 따른 제외다. |
+
+Chrome for Testing의 임시 프로필과 로컬 테스트 페이지로 재현했다. 특정 운영 사이트의 누락률은 측정하지 않았다. [Shadow DOM 접근 규칙](https://developer.mozilla.org/en-US/docs/Web/API/Element/shadowRoot)

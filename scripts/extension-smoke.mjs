@@ -22,7 +22,9 @@ async function until(fn, label) {
   throw new Error(`Timed out: ${label}`);
 }
 const playableMp4 = process.env.DM_MEDIA_FIXTURE ? readFileSync(process.env.DM_MEDIA_FIXTURE) : undefined;
+let shadowRequests = 0;
 const server = createServer((req, res) => {
+  if (req.url?.startsWith('/scan-')) shadowRequests++;
   if (/\/(?:master|variant-\d+)\.m3u8(?:\?|$)/u.test(req.url ?? '')) {
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.end('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nvariant.m3u8\n'); return;
@@ -169,6 +171,29 @@ try {
     .flatMap(e => e.params.versions).some(item => item.versionId === version.versionId && item.runningStatus === 'stopped'), 'worker termination');
   const restored = await stateForTab();
   assert.deepEqual(restored.candidates.map(r => r.candidateId), beforeRepeat.candidates.map(r => r.candidateId));
+  await evaluate(pageSession, `(() => {
+    function addPlayer(container, src, mime = 'video/mp4') {
+      const video = document.createElement('video');
+      video.preload = 'none';
+      const source = document.createElement('source');
+      source.src = src;
+      source.type = mime;
+      video.append(source);
+      container.append(video);
+    }
+    const player = document.body.appendChild(document.createElement('section')).attachShadow({mode: 'open'});
+    const nested = player.appendChild(document.createElement('div')).attachShadow({mode: 'open'});
+    addPlayer(nested, '/scan-open.mp4');
+    addPlayer(nested, '/scan-sensitive.mp4?token=fixture');
+    addPlayer(nested, URL.createObjectURL(new Blob([], { type: 'video/mp4' })));
+    const closed = document.body.appendChild(document.createElement('section')).attachShadow({mode: 'closed'});
+    addPlayer(closed, '/scan-closed.mp4');
+    return true;
+  })()`);
+  await pause(300);
+  assert.equal(shadowRequests, 0);
+  assert.deepEqual((await stateForTab()).candidates.map(r => r.candidateId), restored.candidates.map(r => r.candidateId));
+  console.log('SHADOW_BASELINE_PASS: no requests or automatic candidates from the shadow fixtures');
   await send('Page.navigate', { url: pageUrl.replace('/watch', '/replacement') }, pageSession);
   await until(async () => await evaluate(pageSession, 'globalThis.document?.readyState === "complete" && location.pathname === "/replacement"'), 'full navigation');
   await until(async () => (await stateForTab()).candidates.length === 0, 'full navigation cleanup');
