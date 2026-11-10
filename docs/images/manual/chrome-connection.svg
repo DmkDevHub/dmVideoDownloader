@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 395" role="img" aria-labelledby="title desc" xml:lang="ko">
+  <title id="title">Chrome 확장 연결 순서</title>
+  <desc id="desc">Chrome에서 extension 폴더를 로드하고 팝업에서 ID를 복사한다. 앱에 ID를 붙여 넣어 호스트를 등록한다. 앱에서 연결 테스트를 누른 뒤 30초 안에 Chrome 팝업에서 연결 테스트를 누른다.</desc>
+  <style>
+    text { font-family: "Malgun Gothic", "Noto Sans KR", sans-serif; fill: #edf3ff; }
+    .title { font-size: 26px; font-weight: 700; }
+    .label { font-size: 17px; font-weight: 700; }
+    .small { font-size: 15px; fill: #b5c4da; }
+    .accent { fill: #a9caff; }
+  </style>
+  <rect x="1" y="1" width="898" height="393" rx="20" fill="#10141c" stroke="#354357"/>
+  <text x="28" y="47" class="title">Chrome 확장 연결 순서</text>
+  <rect x="28" y="68" width="844" height="51" rx="8" fill="#171e29" stroke="#354357"/>
+  <text x="48" y="100" class="label"><tspan class="accent">01</tspan><tspan dx="12">chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램 로드 → extension/ 선택</tspan></text>
+
+  <rect x="28" y="140" width="398" height="225" rx="12" fill="#171e29" stroke="#354357"/>
+  <path d="M29 180h396" stroke="#354357"/>
+  <text x="48" y="166" class="label">Chrome 확장 팝업</text>
+  <text x="48" y="213" class="label"><tspan class="accent">02</tspan><tspan dx="12">앱 연결에서 ID 복사</tspan></text>
+  <rect x="48" y="224" width="120" height="35" rx="6" fill="#263852"/>
+  <text x="108" y="247" class="small accent" text-anchor="middle">ID 복사</text>
+  <text x="48" y="297" class="label"><tspan class="accent">05</tspan><tspan dx="12">30초 안에 Chrome에서 누르기</tspan></text>
+  <rect x="48" y="309" width="152" height="35" rx="6" fill="#263852"/>
+  <text x="124" y="332" class="small accent" text-anchor="middle">연결 테스트</text>
+
+  <path d="M430 231h39m-8-8 8 8-8 8 M470 320h-39m8-8-8 8 8 8" fill="none" stroke="#a9caff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="474" y="140" width="398" height="225" rx="12" fill="#171e29" stroke="#354357"/>
+  <path d="M475 180h396" stroke="#354357"/>
+  <text x="494" y="166" class="label">앱 설정 → Chrome 확장 프로그램</text>
+  <text x="494" y="213" class="label"><tspan class="accent">03</tspan><tspan dx="12">확장 ID 붙여 넣기</tspan></text>
+  <rect x="494" y="224" width="220" height="35" rx="6" fill="#111722" stroke="#566984"/>
+  <text x="506" y="247" class="small">Chrome의 실제 ID</text>
+  <rect x="722" y="224" width="130" height="35" rx="6" fill="#263852"/>
+  <text x="787" y="247" class="small accent" text-anchor="middle">호스트 등록</text>
+  <text x="494" y="297" class="label"><tspan class="accent">04</tspan><tspan dx="12">앱에서 먼저 누르기</tspan></text>
+  <rect x="494" y="309" width="152" height="35" rx="6" fill="#263852"/>
+  <text x="570" y="332" class="small accent" text-anchor="middle">연결 테스트</text>
+</svg>

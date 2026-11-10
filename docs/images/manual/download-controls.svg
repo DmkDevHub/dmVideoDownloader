@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 478" role="img" aria-labelledby="title desc" xml:lang="ko">
+  <title id="title">메인 화면에서 영상 다운로드하기</title>
+  <desc id="desc">주소를 직접 입력하거나 Chrome 팝업에서 받은 후보를 분석한다. 분석 결과의 다운로드 버튼으로 저장을 시작하고, 완료된 작업에서 탐색기에서 보기를 누른다.</desc>
+  <style>
+    text { font-family: "Malgun Gothic", "Noto Sans KR", sans-serif; fill: #edf3ff; }
+    .title { font-size: 26px; font-weight: 700; }
+    .label { font-size: 17px; font-weight: 700; }
+    .small { font-size: 15px; fill: #b5c4da; }
+    .accent { fill: #a9caff; }
+    .button { font-size: 15px; font-weight: 700; fill: #101e34; }
+  </style>
+  <rect x="1" y="1" width="898" height="476" rx="20" fill="#10141c" stroke="#354357"/>
+  <text x="28" y="47" class="title">메인 화면에서 영상 다운로드하기</text>
+  <rect x="28" y="68" width="844" height="383" rx="12" fill="#111722" stroke="#566984"/>
+  <path d="M29 113h842" stroke="#354357"/>
+  <text x="48" y="97" class="label">dmVideoDownloader</text>
+  <rect x="776" y="78" width="75" height="26" rx="5" fill="#263852"/>
+  <text x="813.5" y="96" text-anchor="middle" class="small">설정</text>
+
+  <rect x="48" y="129" width="804" height="67" rx="8" fill="#171e29" stroke="#354357"/>
+  <text x="65" y="155" class="label"><tspan class="accent">A</tspan><tspan dx="12">영상 URL 직접 입력</tspan></text>
+  <rect x="65" y="164" width="651" height="23" rx="4" fill="#111722" stroke="#566984"/>
+  <text x="76" y="181" class="small">공개 영상 주소를 입력하세요</text>
+  <rect x="729" y="155" width="105" height="32" rx="5" fill="#a9caff"/>
+  <text x="781.5" y="177" text-anchor="middle" class="button">분석</text>
+
+  <rect x="48" y="207" width="804" height="67" rx="8" fill="#171e29" stroke="#354357"/>
+  <text x="65" y="233" class="label"><tspan class="accent">B</tspan><tspan dx="12">감지된 영상</tspan></text>
+  <text x="65" y="257" class="small">Chrome 팝업에서 보낸 후보 · 화질 미확인</text>
+  <rect x="729" y="233" width="105" height="32" rx="5" fill="#263852"/>
+  <text x="781.5" y="255" text-anchor="middle" class="small accent">분석</text>
+
+  <rect x="48" y="285" width="804" height="67" rx="8" fill="#171e29" stroke="#354357"/>
+  <text x="65" y="311" class="label"><tspan class="accent">01</tspan><tspan dx="12">분석 결과</tspan></text>
+  <text x="65" y="335" class="small">해상도와 형식을 확인한 뒤 앱에서 저장을 시작합니다.</text>
+  <rect x="729" y="311" width="105" height="32" rx="5" fill="#a9caff"/>
+  <text x="781.5" y="333" text-anchor="middle" class="button">다운로드</text>
+
+  <rect x="48" y="363" width="804" height="67" rx="8" fill="#171e29" stroke="#354357"/>
+  <text x="65" y="389" class="label"><tspan class="accent">02</tspan><tspan dx="12">다운로드</tspan></text>
+  <text x="65" y="413" class="small">작업이 완료되면 탐색기에서 저장한 파일을 찾습니다.</text>
+  <rect x="655" y="389" width="179" height="32" rx="5" fill="#263852"/>
+  <text x="744.5" y="411" text-anchor="middle" class="small accent">탐색기에서 보기</text>
+</svg>

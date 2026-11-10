@@ -14,6 +14,8 @@ Windows 11 x64 포터블 배포본 기준 · 2026-11-10
 
 ## 1. 설치와 첫 실행
 
+![포터블 ZIP을 모두 압축 풀기한 뒤 VideoDownloader.exe를 실행하고, Chrome 연결에는 같은 위치의 extension 폴더를 사용한다.](images/manual/portable-setup.svg)
+
 1. **`VideoDownloaderPortable-win-x64.zip`**을 준비합니다. 이미 압축을 푼 배포 폴더를 받았다면 3번부터 진행하세요.
 2. Windows 탐색기에서 ZIP을 우클릭하고 **모두 압축 풀기**를 선택합니다. 예를 들어 `D:\Apps\VideoDownloaderPortable`처럼 본인 계정에 쓰기 권한이 있는 로컬 폴더에 전체 내용을 풉니다.
 3. 아래 구성처럼 실행 파일, `tools`, `extension`이 한 폴더에 있는지 확인하고 **`VideoDownloader.exe`**를 실행합니다. 현재 소스로 빌드한 앱의 창 제목은 **dmVideoDownloader**입니다. 이전 배포본에는 **영상 다운로더**로 표시될 수 있습니다.
@@ -42,6 +44,8 @@ VideoDownloaderPortable/
 
 Chrome 감지 기능을 쓸 때 진행합니다. 확장이 요구하는 최소 Chrome 버전은 120입니다. 앱과 Chrome은 같은 Windows 사용자 계정에서 실행하고, 테스트 중에는 앱을 열어 두세요.
 
+![Chrome에서 확장 ID를 복사하고 앱에 등록한 뒤, 앱의 연결 테스트를 먼저 누르고 30초 안에 Chrome 팝업의 연결 테스트를 누른다.](images/manual/chrome-connection.svg)
+
 ### 확장 폴더 불러오기
 
 1. 앱에서 **설정 → Chrome 확장 프로그램 → 확장 프로그램 설치 안내**를 엽니다.
@@ -60,6 +64,8 @@ Chrome 감지 기능을 쓸 때 진행합니다. 확장이 요구하는 최소 C
 ## 3. 영상 다운로드
 
 저장할 권한이 있는 공개 영상만 사용하세요. 앱은 공개 HTTP(S)의 MP4·WebM, 종료된 비암호화 HLS 및 지원하는 정적 DASH를 처리합니다. 로그인 전용 영상, DRM 보호 영상, 라이브 스트림은 저장할 수 없습니다.
+
+![앱 화면 설명 그림. 직접 입력란 또는 감지된 영상에서 분석을 누르고, 분석 결과의 다운로드로 저장을 시작한다. 완료 후 탐색기에서 보기를 누른다.](images/manual/download-controls.svg)
 
 ### 방법 A. 앱에 주소를 직접 입력
 
