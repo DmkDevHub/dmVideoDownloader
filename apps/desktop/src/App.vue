@@ -257,9 +257,18 @@ onMounted(async () => {
       // Exercise the internal model in a hidden WebView, without clicks or keyboard events.
       editor.value?.open();
       await nextTick();
+      const page = document.documentElement;
+      const dialog = document.querySelector<HTMLDialogElement>('dialog');
       smokePassed = smokePassed && document.querySelectorAll('dialog').length === 1
-        && document.querySelector<HTMLDialogElement>('dialog')?.open === true
+        && dialog?.open === true
         && document.querySelector('#extension-id') !== null;
+      const compactDarkLayout = dialog && matchMedia('(max-width: 540px)').matches
+        && getComputedStyle(page).colorScheme === 'dark'
+        && getComputedStyle(dialog).backgroundColor !== getComputedStyle(page).backgroundColor
+        && page.scrollWidth <= page.clientWidth
+        && dialog.scrollWidth <= dialog.clientWidth;
+      if (!compactDarkLayout) smokeDetails = [smokeDetails, 'Compact dark layout check failed.'].filter(Boolean).join(' ');
+      smokePassed = smokePassed && !!compactDarkLayout;
       editor.value?.reset();
       editor.value?.cancel();
       await nextTick();
@@ -293,8 +302,7 @@ onMounted(async () => {
     </header>
     <section class="panel" aria-label="영상 주소">
       <label for="video-url">영상 URL 직접 입력</label>
-      <form class="input-row" @submit.prevent="analyzeAddress"><input id="video-url" v-model="address" :disabled="analysisBusy" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" maxlength="8192" /><button :disabled="analysisBusy || !address.trim()">{{ analysisBusy ? '분석 중…' : '분석' }}</button></form>
-      <p class="hint">공개 영상의 포맷을 확인합니다.</p>
+      <form class="input-row" @submit.prevent="analyzeAddress"><input id="video-url" v-model="address" :disabled="analysisBusy" type="url" placeholder="공개 영상 주소를 입력하세요" autocomplete="off" spellcheck="false" maxlength="8192" /><button class="primary" :disabled="analysisBusy || !address.trim()">{{ analysisBusy ? '분석 중…' : '분석' }}</button></form>
       <div class="status-row"><span class="badge">Chrome 연동: {{ connectionLabel(connection) }}</span><span>자동 감지 설정: {{ editor && snapshotState?.canSave ? (editor.state.current.browserAutoDetect ? '켜짐' : '꺼짐') : '설정 확인 필요' }}</span></div>
     </section>
     <section class="panel" aria-labelledby="candidates-heading">
@@ -309,7 +317,7 @@ onMounted(async () => {
       <h2>{{ analysis.title }}</h2>
       <p class="hint" role="status">{{ analysisSource[analysis.source] }}에서 포맷 {{ analysis.formats.length }}개를 확인했습니다.</p>
       <p v-if="analysis.excludedProtected" class="hint">보호 가능성이 있는 포맷 {{ analysis.excludedProtected }}개를 제외했습니다.</p>
-      <button type="button" :disabled="submittingDownload || !snapshotState?.canSave" @click="startDownload">다운로드</button>
+      <button class="primary" type="button" :disabled="submittingDownload || !snapshotState?.canSave" @click="startDownload">다운로드</button>
       <div class="table-scroll"><table><thead><tr><th>포맷</th><th>형식</th><th>해상도</th><th>트랙</th><th>영상 코덱</th><th>음성 코덱</th></tr></thead><tbody>
         <tr v-for="format in analysis.formats" :key="format.id">
           <td>{{ format.id }}</td><td>{{ format.container ?? '미확인' }}</td><td>{{ resolution(format) }}</td><td>{{ trackLabel[format.tracks] }}</td>
@@ -325,14 +333,14 @@ onMounted(async () => {
           <td>{{ job.title }}</td><td>{{ job.height ? job.height + 'p' : '미확인' }}</td>
           <td>{{ job.phase === 'completed' ? '100%' : progressLabel(job.progress) }}</td>
           <td>{{ downloadPhase[job.phase] }}<span v-if="job.phase === 'retrying'"> ({{ job.attempt + 1 }}회차)</span><span v-if="job.error" class="error"> · {{ downloadError(job.error) }}</span></td>
-          <td>
-            <span v-if="job.filename">{{ job.filename }}</span>
+          <td><div class="row-actions">
+            <span v-if="job.filename" class="path">{{ job.filename }}</span>
             <button v-if="job.phase === 'completed'" type="button" @click="revealDownload(job.id)">탐색기에서 보기</button>
             <button v-if="['queued', 'analyzing', 'downloading', 'retrying'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'pause')">일시정지</button>
             <button v-if="job.phase === 'paused'" type="button" @click="changeDownload(job.id, 'resume')">재개</button>
             <button v-if="job.canRetry || ['queued', 'analyzing', 'downloading', 'merging', 'retrying', 'pausing', 'paused'].includes(job.phase)" type="button" @click="changeDownload(job.id, 'cancel')">취소</button>
             <button v-if="job.canRetry" type="button" @click="changeDownload(job.id, 'retry')">다시 시도</button>
-          </td>
+          </div></td>
         </tr>
         <tr v-if="!jobs.length"><td colspan="5" class="empty">진행 중인 다운로드가 없습니다.</td></tr>
       </tbody></table></div>

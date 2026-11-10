@@ -10,7 +10,16 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "영상 다운로더", "width": 1000, "height": 700 }],
+    "windows": [{
+      "label": "main",
+      "title": "영상 다운로더",
+      "width": 860,
+      "height": 590,
+      "minWidth": 480,
+      "minHeight": 420,
+      "theme": "Dark",
+      "backgroundColor": "#10141c"
+    }],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:",
       "capabilities": []
