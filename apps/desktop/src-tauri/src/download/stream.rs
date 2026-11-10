@@ -9,10 +9,10 @@ use reqwest::{
     redirect::Policy,
 };
 use std::{
-    fs::File,
-    io::{Read, Write},
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom, Write},
     ops::RangeInclusive,
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use url::Url;
@@ -20,9 +20,31 @@ use url::Url;
 pub(super) use proxy::MAX_MEDIA_SEGMENTS as MAX_PARTS;
 const MAX_PLAYLIST: usize = 1024 * 1024;
 
+#[derive(PartialEq, Eq)]
 pub(super) struct Part {
     pub url: Url,
     pub range: Option<RangeInclusive<u64>>,
+}
+
+#[derive(Default)]
+pub(super) struct TrackPartial {
+    pub file: Option<PartialFile>,
+    pub segments: Option<SegmentCheckpoint>,
+}
+
+#[derive(PartialEq, Eq)]
+pub(super) struct SegmentPlan {
+    pub source: Url,
+    pub format: String,
+    pub playlist_hash: [u8; 32],
+    pub parts: Vec<Part>,
+}
+
+pub(super) struct SegmentCheckpoint {
+    path: tempfile::TempPath,
+    plan: SegmentPlan,
+    completed: usize,
+    downloaded: u64,
 }
 
 pub(super) struct PartialFile {
@@ -171,21 +193,73 @@ impl<'a> StreamClient<'a> {
 
     pub fn transfer(
         &self,
-        parts: &[Part],
-        path: &Path,
+        plan: SegmentPlan,
+        directory: &Path,
+        saved: &mut Option<SegmentCheckpoint>,
         mut update: impl FnMut(Progress),
-    ) -> Result<(), &'static str> {
-        crate::folders::check_path(path)?;
-        if parts.is_empty() {
+    ) -> Result<PathBuf, &'static str> {
+        crate::folders::check_path(directory)?;
+        if plan.parts.is_empty() {
             return Err("STREAM_RESPONSE_INVALID");
         }
-        if parts.len() > MAX_PARTS {
+        if plan.parts.len() > MAX_PARTS {
             return Err("DOWNLOAD_LIMIT");
         }
+        let mut continuation = None;
+        if let Some(checkpoint) = saved.as_ref() {
+            crate::folders::check_path(&checkpoint.path)?;
+            if checkpoint.plan == plan
+                && fs::metadata(&checkpoint.path)
+                    .is_ok_and(|file| file.is_file() && file.len() >= checkpoint.downloaded)
+            {
+                continuation = Some(Continuation::Resumed);
+            } else {
+                saved.take();
+                continuation = Some(Continuation::Restarted);
+            }
+        }
+        if saved.is_none() {
+            let temporary = tempfile::Builder::new()
+                .prefix(".dm-segments-")
+                .tempfile_in(directory)
+                .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
+            *saved = Some(SegmentCheckpoint {
+                path: temporary.into_temp_path(),
+                plan,
+                completed: 0,
+                downloaded: 0,
+            });
+        }
+        let checkpoint = saved.as_mut().ok_or("DOWNLOAD_SAVE_FAILED")?;
+        let result = self.copy_segments(checkpoint, continuation, &mut update);
+        match result {
+            Ok(()) => Ok(checkpoint.path.to_path_buf()),
+            Err(error) => {
+                if checkpoint.completed == 0
+                    || !super::queue::retryable(error) && error != "DOWNLOAD_INTERRUPTED"
+                {
+                    saved.take();
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn copy_segments(
+        &self,
+        checkpoint: &mut SegmentCheckpoint,
+        continuation: Option<Continuation>,
+        update: &mut impl FnMut(Progress),
+    ) -> Result<(), &'static str> {
+        let parts = &checkpoint.plan.parts;
         let mut file = File::options()
             .write(true)
-            .create_new(true)
-            .open(path)
+            .open(&checkpoint.path)
+            .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
+        // An interrupted segment may have written bytes past the last complete boundary.
+        file.set_len(checkpoint.downloaded)
+            .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
+        file.seek(SeekFrom::Start(checkpoint.downloaded))
             .map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
         let started = Instant::now();
         let mut last_update = started;
@@ -193,9 +267,19 @@ impl<'a> StreamClient<'a> {
             let range = part.range.as_ref()?;
             total.checked_add(range.end().checked_sub(*range.start())?.checked_add(1)?)
         });
-        let mut downloaded = 0u64;
+        let offset = checkpoint.downloaded;
+        let mut downloaded = offset;
+        if continuation.is_some() {
+            update(Progress {
+                downloaded,
+                total,
+                bytes_per_second: None,
+                segments: Some((checkpoint.completed, parts.len())),
+                continuation,
+            });
+        }
         let mut buffer = [0; 64 * 1024];
-        for (index, part) in parts.iter().enumerate() {
+        for (index, part) in parts.iter().enumerate().skip(checkpoint.completed) {
             let mut response = self
                 .get(
                     part.url.clone(),
@@ -239,9 +323,11 @@ impl<'a> StreamClient<'a> {
                     update(Progress {
                         downloaded,
                         total,
-                        bytes_per_second: Some(downloaded as f64 / started.elapsed().as_secs_f64()),
+                        bytes_per_second: Some(
+                            (downloaded - offset) as f64 / started.elapsed().as_secs_f64(),
+                        ),
                         segments: Some((index, parts.len())),
-                        continuation: None,
+                        continuation,
                     });
                     last_update = Instant::now();
                 }
@@ -252,6 +338,8 @@ impl<'a> StreamClient<'a> {
             if count == 0 {
                 return Err("STREAM_SEGMENT_EMPTY");
             }
+            checkpoint.completed = index + 1;
+            checkpoint.downloaded = downloaded;
         }
         file.flush().map_err(|_| "DOWNLOAD_SAVE_FAILED")?;
         update(Progress {
@@ -259,7 +347,7 @@ impl<'a> StreamClient<'a> {
             total: Some(downloaded),
             bytes_per_second: None,
             segments: Some((parts.len(), parts.len())),
-            continuation: None,
+            continuation,
         });
         Ok(())
     }
@@ -514,7 +602,7 @@ mod tests {
     };
 
     fn fixture(
-        responses: Vec<&'static str>,
+        responses: Vec<impl AsRef<[u8]> + Send + 'static>,
         run: impl FnOnce(&StreamClient<'_>, Url),
     ) -> Vec<String> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -550,7 +638,7 @@ mod tests {
                     }
                     request.push_str(&line);
                 }
-                connection.write_all(response.as_bytes()).unwrap();
+                connection.write_all(response.as_ref()).unwrap();
                 requests.push(request.to_ascii_lowercase());
             }
             requests
@@ -576,8 +664,8 @@ mod tests {
         ] {
             fixture(vec![response], |client, url| {
                 let folder = tempfile::tempdir().unwrap();
-                let path = folder.path().join("part");
-                assert_eq!(client.transfer(&[Part { url, range }], &path, |_| {}), Err(expected));
+                let plan = plan(&url, vec![Part { url: url.clone(), range }]);
+                assert_eq!(client.transfer(plan, folder.path(), &mut None, |_| {}), Err(expected));
             });
         }
     }
@@ -589,8 +677,9 @@ mod tests {
             "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 2-3/4\r\nContent-Length: 2\r\nConnection: close\r\n\r\ncd",
         ], |client, url| {
             let folder = tempfile::tempdir().unwrap();
-            let path = folder.path().join("part");
-            client.transfer(&[Part { url, range: Some(2..=3) }], &path, |_| {}).unwrap();
+            let plan = plan(&url, vec![Part { url: url.clone(), range: Some(2..=3) }]);
+            let mut saved = None;
+            let path = client.transfer(plan, folder.path(), &mut saved, |_| {}).unwrap();
             assert_eq!(std::fs::read(path).unwrap(), b"cd");
         });
         assert!(requests[1].starts_with("get /media "));
@@ -692,5 +781,168 @@ mod tests {
         assert!(requests
             .iter()
             .all(|request| !request.contains("\r\nif-range:")));
+    }
+
+    fn plan(source: &Url, parts: Vec<Part>) -> SegmentPlan {
+        SegmentPlan {
+            source: source.clone(),
+            format: "fixture".into(),
+            playlist_hash: [0; 32],
+            parts,
+        }
+    }
+
+    #[test]
+    #[ignore = "requires verified FFmpeg"]
+    fn decodes_real_fragments_after_interrupted_segment_resume() {
+        use std::process::Command;
+        let root = PathBuf::from(std::env::var_os("DM_R4_TOOL_ROOT").unwrap());
+        let ffmpeg = super::super::ffmpeg(&root).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        assert!(Command::new(&ffmpeg)
+            .current_dir(folder.path())
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=s=32x32:r=4",
+                "-t",
+                "2",
+                "-c:v",
+                "libx264",
+                "-g",
+                "4",
+                "-f",
+                "dash",
+                "-seg_duration",
+                "1",
+                "test.mpd"
+            ])
+            .status()
+            .unwrap()
+            .success());
+        let init = fs::read(folder.path().join("init-stream0.m4s")).unwrap();
+        let first = fs::read(folder.path().join("chunk-stream0-00001.m4s")).unwrap();
+        let second = fs::read(folder.path().join("chunk-stream0-00002.m4s")).unwrap();
+        let response = |body: &[u8], length: usize| {
+            let mut bytes =
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n")
+                    .into_bytes();
+            bytes.extend_from_slice(body);
+            bytes
+        };
+        let requests = fixture(
+            vec![
+                response(&init, init.len()),
+                response(&first[..first.len() / 2], first.len()),
+                response(&first, first.len()),
+                response(&second, second.len()),
+            ],
+            |client, url| {
+                let mut saved = None;
+                let make_plan = || {
+                    plan(
+                        &url,
+                        ["/init", "/first", "/second"]
+                            .into_iter()
+                            .map(|name| Part {
+                                url: url.join(name).unwrap(),
+                                range: None,
+                            })
+                            .collect(),
+                    )
+                };
+                assert_eq!(
+                    client
+                        .transfer(make_plan(), folder.path(), &mut saved, |_| {})
+                        .unwrap_err(),
+                    "STREAM_BODY_INCOMPLETE"
+                );
+                let output = client
+                    .transfer(make_plan(), folder.path(), &mut saved, |_| {})
+                    .unwrap();
+                assert_eq!(
+                    fs::read(&output).unwrap(),
+                    [&init[..], &first, &second].concat()
+                );
+                assert!(Command::new(&ffmpeg)
+                    .args(["-v", "error", "-xerror", "-f", "mov", "-i"])
+                    .arg(output)
+                    .args(["-f", "null", "-"])
+                    .status()
+                    .unwrap()
+                    .success());
+            },
+        );
+        assert!(requests[2].starts_with("get /first "));
+        assert!(requests[3].starts_with("get /second "));
+    }
+
+    #[test]
+    fn resumes_only_complete_segments_of_the_same_plan() {
+        let first = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc";
+        let cut = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nd";
+        let second = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\ndef";
+        for changed in [false, true] {
+            let responses = if changed {
+                vec![first, cut, first, second]
+            } else {
+                vec![first, cut, second]
+            };
+            let requests = fixture(responses, |client, url| {
+                let folder = tempfile::tempdir().unwrap();
+                let make_plan = || {
+                    plan(
+                        &url,
+                        vec![
+                            Part {
+                                url: url.join("/first").unwrap(),
+                                range: None,
+                            },
+                            Part {
+                                url: url.join("/second").unwrap(),
+                                range: None,
+                            },
+                        ],
+                    )
+                };
+                let mut saved = None;
+                assert_eq!(
+                    client
+                        .transfer(make_plan(), folder.path(), &mut saved, |_| {})
+                        .unwrap_err(),
+                    "STREAM_BODY_INCOMPLETE"
+                );
+                assert_eq!(saved.as_ref().unwrap().completed, 1);
+                let mut next = make_plan();
+                if changed {
+                    next.playlist_hash[0] = 1;
+                }
+                let mut progress = Vec::new();
+                let result = client
+                    .transfer(next, folder.path(), &mut saved, |value| {
+                        progress.push(value)
+                    })
+                    .unwrap();
+                assert_eq!(
+                    progress[0].continuation,
+                    Some(if changed {
+                        Continuation::Restarted
+                    } else {
+                        Continuation::Resumed
+                    })
+                );
+                assert_eq!(fs::read(result).unwrap(), b"abcdef");
+                drop(saved);
+                assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
+            });
+            assert!(requests[2].starts_with(if changed {
+                "get /first "
+            } else {
+                "get /second "
+            }));
+        }
     }
 }

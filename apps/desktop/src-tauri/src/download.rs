@@ -117,16 +117,19 @@ fn download(
     {
         return Err("CONTAINER_INCOMPATIBLE");
     }
-    if let Some(dash) = [Some(format), audio]
+    let dash_hash = if let Some(dash) = [Some(format), audio]
         .into_iter()
         .flatten()
         .filter_map(|format| format.media.as_ref())
         .find(|media| media.is_dash())
     {
         let client = stream::StreamClient::new(control)?;
-        dash::check_manifest(&client, dash)?;
+        let hash = dash::check_manifest(&client, dash)?;
         streams = Some(client);
-    }
+        Some(hash)
+    } else {
+        None
+    };
     let output_ext = match settings.format {
         Container::Mp4 => "mp4",
         Container::Mkv => "mkv",
@@ -153,7 +156,7 @@ fn download(
         .map_err(|_| "DIRECTORY_NOT_WRITABLE")?;
     let mut partial = work.partial.lock().map_err(|_| "DOWNLOAD_FAILED")?;
     if audio.is_none() {
-        partial[1].take();
+        partial[1] = stream::TrackPartial::default();
     }
     let video = staging.path().join(format!("source.{ext}"));
     let update = Arc::new(update);
@@ -162,12 +165,13 @@ fn download(
         height: format.height,
     });
     let video_update = Arc::clone(&update);
-    let video_demux = transfer(
+    let (video, video_demux) = transfer(
         streams.as_ref(),
         format,
         &video,
         &directory,
         &mut partial[0],
+        dash_hash,
         control,
         move |value| video_update(Update::Progress(value)),
     )?;
@@ -179,16 +183,16 @@ fn download(
                 .ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
             let file = staging.path().join(format!("audio.{ext}"));
             let audio_update = Arc::clone(&update);
-            let demux = transfer(
+            transfer(
                 streams.as_ref(),
                 audio,
                 &file,
                 &directory,
                 &mut partial[1],
+                dash_hash,
                 control,
                 move |value| audio_update(Update::Progress(value)),
-            )?;
-            Ok((file, demux))
+            )
         })
         .transpose()?;
     update(Update::Merging);
@@ -457,28 +461,35 @@ fn transfer(
     format: &extract::Format,
     path: &Path,
     directory: &Path,
-    partial: &mut Option<stream::PartialFile>,
+    partial: &mut stream::TrackPartial,
+    dash_hash: Option<[u8; 32]>,
     control: &Control,
     update: impl FnMut(Progress) + Send + 'static,
-) -> Result<Demux, &'static str> {
+) -> Result<(PathBuf, Demux), &'static str> {
     folders::check_path(path)?;
     let media = format.media.as_ref().ok_or("DOWNLOAD_FORMAT_UNSUPPORTED")?;
     if media.is_hls() {
-        partial.take();
+        partial.file.take();
         let streams = streams.ok_or("DOWNLOAD_FAILED")?;
         let (base, text) = streams.playlist(&media.url)?;
         let (parts, demux) = hls::plan(&base, &text)?;
-        streams.transfer(&parts, path, update)?;
-        return Ok(demux);
+        let plan = stream::SegmentPlan {
+            source: base,
+            format: format.id.clone(),
+            playlist_hash: Sha256::digest(text.as_bytes()).into(),
+            parts,
+        };
+        let path = streams.transfer(plan, directory, &mut partial.segments, update)?;
+        return Ok((path, demux));
     }
     if media.is_dash() {
-        partial.take();
+        partial.file.take();
         let demux = match format.container.as_deref() {
             Some("mp4" | "m4a") => Demux::Mov,
             Some("webm") => Demux::Matroska,
             _ => return Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
         };
-        let parts: Vec<_> = media
+        let parts = media
             .dash_segments
             .iter()
             .map(|url| stream::Part {
@@ -486,16 +497,31 @@ fn transfer(
                 range: None,
             })
             .collect();
-        streams
-            .ok_or("DOWNLOAD_FAILED")?
-            .transfer(&parts, path, update)?;
-        return Ok(demux);
+        let plan = stream::SegmentPlan {
+            source: media.url.clone(),
+            format: format.id.clone(),
+            playlist_hash: dash_hash.ok_or("DASH_MANIFEST_UNSUPPORTED")?,
+            parts,
+        };
+        let path = streams.ok_or("DOWNLOAD_FAILED")?.transfer(
+            plan,
+            directory,
+            &mut partial.segments,
+            update,
+        )?;
+        return Ok((path, demux));
     }
-    stream::StreamClient::new(control)?
-        .download_file(&media.url, path, directory, partial, update)?;
+    partial.segments.take();
+    stream::StreamClient::new(control)?.download_file(
+        &media.url,
+        path,
+        directory,
+        &mut partial.file,
+        update,
+    )?;
     match format.container.as_deref() {
-        Some("mp4" | "m4a") => Ok(Demux::Mov),
-        Some("webm") => Ok(Demux::Matroska),
+        Some("mp4" | "m4a") => Ok((path.to_path_buf(), Demux::Mov)),
+        Some("webm") => Ok((path.to_path_buf(), Demux::Matroska)),
         _ => Err("DOWNLOAD_FORMAT_UNSUPPORTED"),
     }
 }

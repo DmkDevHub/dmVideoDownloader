@@ -18,7 +18,7 @@ pub(super) struct Work {
     pub settings: Settings,
     pub page: String,
     pub media: Option<String>,
-    pub partial: Mutex<[Option<super::stream::PartialFile>; 2]>,
+    pub partial: Mutex<[super::stream::TrackPartial; 2]>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -421,7 +421,7 @@ impl Queue {
     }
 }
 
-fn retryable(code: &str) -> bool {
+pub(super) fn retryable(code: &str) -> bool {
     matches!(
         code,
         "NETWORK_ERROR" | "ANALYSIS_TIMEOUT" | "DOWNLOAD_TIMEOUT" | "STREAM_BODY_INCOMPLETE"

@@ -4,12 +4,22 @@ use quick_xml::{
     events::{BytesStart, Event},
     Reader,
 };
+use sha2::{Digest, Sha256};
 
 const UNSUPPORTED: &str = "DASH_MANIFEST_UNSUPPORTED";
 
-pub(super) fn check_manifest(client: &StreamClient<'_>, media: &Media) -> Result<(), &'static str> {
-    let (_, manifest) = client.playlist(media.manifest.as_ref().ok_or(UNSUPPORTED)?)?;
-    validate(&manifest)
+pub(super) fn check_manifest(
+    client: &StreamClient<'_>,
+    media: &Media,
+) -> Result<[u8; 32], &'static str> {
+    let (url, manifest) = client.playlist(media.manifest.as_ref().ok_or(UNSUPPORTED)?)?;
+    validate(&manifest)?;
+    Ok(Sha256::new()
+        .chain_update(url.as_str())
+        .chain_update([0])
+        .chain_update(manifest)
+        .finalize()
+        .into())
 }
 
 fn validate(text: &str) -> Result<(), &'static str> {
