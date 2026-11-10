@@ -12,7 +12,7 @@
   "app": {
     "windows": [{
       "label": "main",
-      "title": "영상 다운로더",
+      "title": "dmVideoDownloader",
       "width": 860,
       "height": 590,
       "minWidth": 480,

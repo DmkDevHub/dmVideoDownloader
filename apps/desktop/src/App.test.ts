@@ -10,7 +10,7 @@ test('the startup component renders without browser APIs or network requests', a
   const html = await renderToString(createSSRApp(App));
 
   expect(html).toMatch(/<main\b[^>]*data-app-ready/);
-  expect(html).toMatch(/<h1>[^<]+<\/h1>/);
+  expect(html).toContain('<h1>dmVideoDownloader</h1>');
   expect(fetch).not.toHaveBeenCalled();
   expect(html).toContain('영상 URL 직접 입력');
   expect(html).toContain('id="candidates-heading"');

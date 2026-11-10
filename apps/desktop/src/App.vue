@@ -297,7 +297,7 @@ onMounted(async () => {
 <template>
   <main data-app-ready>
     <header class="app-header">
-      <div><p class="eyebrow">개인용 · Windows 포터블</p><h1>영상 다운로더</h1></div>
+      <div><p class="eyebrow">개인용 · Windows 포터블</p><h1>dmVideoDownloader</h1></div>
       <button type="button" :disabled="!editor" @click="openSettings">설정</button>
     </header>
     <section class="panel" aria-label="영상 주소">
